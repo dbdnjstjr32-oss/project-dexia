@@ -26,20 +26,21 @@ from pydantic import BaseModel, Field
 
 from ..integrations.command_queue import append_command, DEFAULT_PATH as COMMANDS_PATH
 from ..ai.tactical_agent import TacticalAgent
+from ..ai.pipeline import TacticalPipeline
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TELEMETRY_PATH = os.path.join(ROOT, "telemetry.json")
 ONTOLOGY_PATH = os.path.join(ROOT, "ontology_state.json")
 
-# Lazily-constructed AI Staff agent (loads the Ollama client once).
-_AGENT: TacticalAgent | None = None
+# Lazily-constructed OAG + Logic-block tactical pipeline.
+_PIPELINE: TacticalPipeline | None = None
 
 
-def _agent() -> TacticalAgent:
-    global _AGENT
-    if _AGENT is None:
-        _AGENT = TacticalAgent()
-    return _AGENT
+def _pipeline() -> TacticalPipeline:
+    global _PIPELINE
+    if _PIPELINE is None:
+        _PIPELINE = TacticalPipeline()
+    return _PIPELINE
 
 app = FastAPI(
     title="Dexia Simulator Control API",
@@ -239,24 +240,20 @@ class AssessResponse(BaseModel):
     model: Optional[str] = None
     assessment: str = ""
     recommendations: list[dict] = []
+    comms: Optional[dict] = None
+    killchain_decision: Optional[str] = None
+    blocks: list[str] = []
     error: Optional[str] = None
 
 
 @app.post("/api/sim/assess", response_model=AssessResponse)
 def assess() -> AssessResponse:
-    """Run the local LLM tactical agent on the CURRENT battlefield telemetry and
-    return a Course of Action (assessment + recommended tool calls). Does NOT
-    execute — that is gated by human approval in the HUD (Phase D / HITL)."""
-    if not os.path.exists(TELEMETRY_PATH):
-        raise HTTPException(status_code=503, detail="no telemetry — is the streamer running?")
-    try:
-        with open(TELEMETRY_PATH, "r", encoding="utf-8") as f:
-            tele = json.load(f)
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"telemetry read failed: {exc}")
-
-    coa = _agent().assess(tele)
-    # annotate each recommendation with the concrete control-API call to run on approval
+    """Run the OAG + Logic-block pipeline on the CURRENT ontology snapshot and
+    return a governed Course of Action (assessment + tool recs + comms risk +
+    route + ActionBus governance). Does NOT execute — gated by HUD approval."""
+    ontology = _load_ontology()  # raises 503 if the streamer isn't writing it
+    coa = _pipeline().run(ontology)
+    # annotate each recommendation with the control-API call to run on approval
     for r in coa.get("recommendations", []):
         r["api"] = TacticalAgent.to_api_call(r)
     return AssessResponse(
@@ -264,5 +261,7 @@ def assess() -> AssessResponse:
         model=coa.get("model"),
         assessment=coa.get("assessment", ""),
         recommendations=coa.get("recommendations", []),
-        error=coa.get("error"),
+        comms=coa.get("comms"),
+        killchain_decision=coa.get("killchain_decision"),
+        blocks=coa.get("blocks", []),
     )

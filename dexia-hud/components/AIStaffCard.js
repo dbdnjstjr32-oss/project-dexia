@@ -84,8 +84,21 @@ export default function AIStaffCard() {
 
       {coa && (
         <>
-          {coa.model && <div style={S.model}>model: {coa.model}</div>}
+          {coa.model && (
+            <div style={S.model}>
+              model: {coa.model} · blocks: {(coa.blocks || []).join(' → ')}
+            </div>
+          )}
+          {coa.comms && (
+            <div style={S.comms}>
+              네트워크 생존율 {Math.round((coa.comms.network_survivability ?? 1) * 100)}%
+              {coa.comms.degraded?.length ? ` · 링크저하: ${coa.comms.degraded.join(', ')}` : ''}
+            </div>
+          )}
           <div style={S.assessment}>{coa.assessment || '(평가 텍스트 없음)'}</div>
+          {coa.killchain_decision && (
+            <div style={S.killchain}>킬체인 결심: {coa.killchain_decision}</div>
+          )}
 
           <div style={S.recTitle}>제안 행동방침 (COA)</div>
           {(coa.recommendations || []).length === 0 && (
@@ -93,7 +106,15 @@ export default function AIStaffCard() {
           )}
           {(coa.recommendations || []).map((rec, i) => (
             <div key={i} style={S.recRow}>
-              <span style={S.recText}>{recLabel(rec)}</span>
+              <span style={S.recText}>
+                {recLabel(rec)}
+                {rec.governance === 'rejected' && (
+                  <span style={S.gov} title={rec.governance_reason}> ⛔ 거버넌스 거부</span>
+                )}
+                {rec.route && rec.route.length > 2 && (
+                  <span style={S.route}> · 우회경로 {rec.route.length}점</span>
+                )}
+              </span>
               {done[i] ? (
                 <span style={{ ...S.badge, color: done[i] === 'approved' ? '#52c41a' : '#ff7875' }}>
                   {done[i] === 'approved' ? '✓ 승인·실행' : '✕ 거절'}
@@ -119,6 +140,10 @@ const S = {
   title: { fontSize: 11, letterSpacing: 1.5, color: '#7cc4ff', textTransform: 'uppercase', fontWeight: 800 },
   runBtn: { background: '#2f6da3', color: '#fff', border: 'none', borderRadius: 5, padding: '5px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' },
   model: { fontSize: 9, color: '#5b6675', marginBottom: 4 },
+  comms: { fontSize: 10.5, color: '#9fd0ff', marginBottom: 6 },
+  killchain: { fontSize: 11.5, color: '#ffd7a8', background: 'rgba(40,28,12,0.5)', borderRadius: 4, padding: '6px 9px', marginTop: 6 },
+  gov: { color: '#ff7875', fontSize: 10, fontWeight: 700 },
+  route: { color: '#7cffb2', fontSize: 10 },
   assessment: { fontSize: 12.5, lineHeight: 1.5, color: '#dbe6f2', background: 'rgba(8,12,17,0.7)', borderLeft: '3px solid #40a9ff', borderRadius: 4, padding: '8px 10px', whiteSpace: 'pre-wrap', maxHeight: 180, overflowY: 'auto' },
   recTitle: { fontSize: 10.5, letterSpacing: 1, color: '#6b7785', margin: '12px 0 6px', textTransform: 'uppercase' },
   recRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, background: 'rgba(8,12,17,0.7)', border: '1px solid #161d25', borderRadius: 5, padding: '7px 9px', marginBottom: 6 },

@@ -101,3 +101,32 @@ def ingest(registry, record: dict) -> dict:
     registry.replace("MissionObject", [o["mission"]])
     registry.set_links(o["links"])
     return o
+
+
+_SNAPSHOT_CLASSES = {
+    "DroneObject": DroneObject,
+    "ThreatObject": ThreatObject,
+    "MissionObject": MissionObject,
+}
+
+
+def registry_from_snapshot(snapshot: dict):
+    """Rebuild a typed registry from a JSON ontology snapshot (e.g. read by the
+    FastAPI process from ``ontology_state.json``). Lets the ActionBus validate
+    against the same object types the streamer produced."""
+    from .registry import InMemoryRegistry
+
+    reg = InMemoryRegistry()
+    for object_type, items in (snapshot.get("objects", {}) or {}).items():
+        cls = _SNAPSHOT_CLASSES.get(object_type)
+        if cls is None:
+            continue
+        objs = []
+        for d in items:
+            kwargs = {k: v for k, v in d.items() if k != "object_type"}
+            try:
+                objs.append(cls(**kwargs))
+            except TypeError:
+                pass
+        reg.replace(object_type, objs)
+    return reg

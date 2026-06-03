@@ -1,7 +1,6 @@
 import { memo, useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { useTelemetry } from '../lib/useTelemetry';
-import { analyzeTelemetry } from '../lib/mockRag';
 import { lngLatToLocal } from '../lib/geo';
 import DroneGarage from '../components/DroneGarage';
 import AIStaffCard from '../components/AIStaffCard';
@@ -247,28 +246,14 @@ const LeftPanel = memo(function LeftPanel({ telemetry }) {
 /* RIGHT PANEL — TACTICAL ADVISORY (AI STAFF) + SYSTEM TELEMETRY       */
 /* ------------------------------------------------------------------ */
 const RightPanel = memo(function RightPanel({ telemetry }) {
-  const advisories = telemetry ? analyzeTelemetry(telemetry) : [];
   const ns = telemetry?.network_survivability ?? 1;
   const wind = telemetry?.wind_gust ?? 0;
   const lost = telemetry?.events?.total_lost ?? 0;
 
   return (
     <div style={{ ...S.card, width: 340 }}>
-      {/* HITL: real local-LLM agent with commander approval */}
+      {/* AIP: real local-LLM OAG + Logic-block pipeline with commander approval */}
       <AIStaffCard />
-
-      <div style={S.cardTitle}>RULE ADVISORY (mockRag)</div>
-      <div style={S.feed}>
-        {advisories.length === 0 && <div style={S.dim}>No advisories.</div>}
-        {advisories.map((a, i) => (
-          <div key={i} style={{ ...S.advisory, borderLeft: `4px solid ${LEVEL_COLORS[a.level] || '#888'}` }}>
-            <span style={{ color: LEVEL_COLORS[a.level] || '#ccc', fontWeight: 700 }}>
-              [{a.level.toUpperCase()}]
-            </span>{' '}
-            {a.text}
-          </div>
-        ))}
-      </div>
 
       <div style={{ ...S.cardTitle, marginTop: 14 }}>SYSTEM TELEMETRY</div>
       <div style={S.gauges}>

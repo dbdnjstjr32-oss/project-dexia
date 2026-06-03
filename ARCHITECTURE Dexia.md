@@ -261,7 +261,72 @@ Dexia 이벤트 ──► dexia/integrations/webhook.py ──POST(x-internal-se
 
 ---
 
-## 14. 빌드 단계 요약
+## 14. AIP 엔터프라이즈 계층 (Phase 6–10 — Palantir AIP 전환)
+
+Phase 1–5의 시뮬 코어를 **온톨로지 중심의 Enterprise AI 플랫폼**으로 승격한다.
+파일 I/O → 이벤트 버스, 규칙기반 mockRag → 실 LLM 에이전트, 하드코딩 루프 → FastAPI
+마이크로서비스로 전환. **불변 경계(`PhysicsEngine` ABC / `DroneState` / 정적 에이전트
+집합)는 건드리지 않고**, 시맨틱/AI 계층을 그 *위에* 얹는다.
+
+### 14.0 전체 데이터 흐름
+```
+DroneMARLEnv (물리 — 불변)
+   │ build_record (틱당 dict)
+telemetry_stream.py  ──DualSink──┬─► telemetry.json (폴링 폴백)
+   │                              └─► Redis: XADD/PUBLISH dexia:telemetry  ──► /api/stream (SSE) ──► HUD
+   │ ontology_ingest (사후 변환)
+   └─► ontology_state.json (타입 객체 그래프)
+                    │
+   FastAPI :8000 ──┤  OSS:  /ontology/drones·threats·killchain·snapshot
+   (dexia-api)      └─ /api/sim/assess  ──► TacticalPipeline (OAG + Logic 블록)
+                                              CommsRisk(NumPy) → TacticalAssess(LLM)
+                                              → RouteOptim(NumPy) → KillChainDecision(LLM)
+                                              → MissionUpdate(ActionBus 거버넌스)
+                                                   │ COA(평가+권고+경로+거버넌스)
+   k-LLM Gateway ──► Ollama(llama3.1/qwen2.5)      ▼
+   (라우팅+llm_audit)                      HUD AIStaffCard [승인]/[거절] (HITL)
+                                                   │ 승인 시
+                                          /api/command ──► commands.json ──► 스트리머 ──► 물리 실행
+```
+
+### 14.1 이벤트 파이프라인 (Phase A) — Redis + SSE
+- **`RedisSink`** (`telemetry_stream.py`): `XADD`(영속 스트림, MAXLEN 2000) + `PUBLISH`(저지연) + `SET :latest`(신규 접속 즉시 상태). **`DualSink`** 로 JSON 파일과 Redis를 동시 기록 → 폴링/SSE 양립.
+- **SSE** (`dexia-hud/pages/api/stream.js`): node-redis 구독 → 브라우저 푸시. `useTelemetry` 훅이 **SSE 우선 + 폴링 자동 폴백** (Redis 죽어도 무중단).
+- 인프라: `docker run --name dexia-redis -p 6379:6379 redis:7-alpine`.
+
+### 14.2 시맨틱 레이어 — DroneOntology (Phase 6, Foundry/OMS)
+| 모듈 | Palantir 대응 | 역할 |
+|------|---------------|------|
+| `dexia/ontology/schema.py` | **OMS** | DroneObject·ThreatObject·MissionObject + KillChainLink·CommsLink, ACTION_TYPES |
+| `dexia/ontology/registry.py` | **OSS(저장)** | InMemoryRegistry (upsert/replace/query/snapshot, 스레드세이프) |
+| `dexia/ontology/serializer.py` | — | telemetry → 타입 객체 (물리 루프 밖 사후 변환), `registry_from_snapshot` |
+| `dexia/ontology/action_bus.py` | **Funnel** | 스키마+상태+MAC 검증 + `action_audit.jsonl`, **학습 중 bypass 모드** |
+
+MAC 예: `_lost` 드론 move/engage 거부, kami는 broadcast 전 engage 불가(킬체인).
+
+### 14.3 OSS API + k-LLM Gateway (Phase 7)
+- **OSS REST** (`dexia/api/sim_api.py`): `GET /ontology/{drones,drones/{id},threats,killchain,mission,snapshot}` — `ontology_state.json`을 읽어 타입화 쿼리 서빙 (HUD/AI가 flat 폴링 대신 사용).
+- **k-LLM Gateway** (`dexia/api/llm_gateway.py`): use_case 라우터(tactical→llama3.1 / summary→qwen2.5 / airgap→로컬), 멀티프로바이더(키 있으면 Claude/GPT 투명 전환), 모든 호출 `llm_audit.jsonl`(모델·토큰·레이턴시).
+
+### 14.4 OAG + Logic 블록 (Phase 8) — mockRag 대체
+- **OAG** (`dexia/ai/oag.py`): 온톨로지 스냅샷 → 3계층(미션/드론 객체그래프/위협+링크) 타입 컨텍스트를 LLM에 주입 (벡터DB 불필요 — 이미 구조화됨).
+- **Logic 블록** (`dexia/ai/blocks.py`, `pipeline.py`): `CommsRiskBlock`·`RouteOptimBlock`(Execute Function/NumPy, 결정론) + `TacticalAssessBlock`·`KillChainDecisionBlock`(Use LLM, **temp=0**) + `MissionUpdateBlock`(Apply Action/ActionBus). 온도 전략: 전술 0 / 브리핑 0.3.
+
+### 14.5 FastAPI 제어 평면 + HITL 결재 (Sprint 1)
+- `POST /api/sim/{deploy,enemy,friendly,activate,standby,recall,clear}` (Pydantic 검증) → 명령 큐 적재.
+- `POST /api/sim/assess` → OAG 파이프라인 → COA 반환.
+- **HUD `AIStaffCard`**: `⚡ AI 전술 분석` → COA(평가·통신위험·우회경로·거버넌스) 표출 → 지휘관 **[승인]** 시에만 `/api/command`로 실제 물리 실행. *모델은 절대 자동 실행 안 함.*
+
+### 14.6 관찰가능성 — 불변 감사 트레일 3종 (Phase 9 토대)
+| 로그 | 계층 | 내용 |
+|------|------|------|
+| `ontology_state.json` | 시뮬 | 틱당 타입 객체 그래프 |
+| `action_audit.jsonl` | 액션 | ActionBus 모든 쓰기 시도(승인/거부+사유) |
+| `llm_audit.jsonl` | AI | k-LLM 호출(모델·토큰·레이턴시) |
+
+---
+
+## 15. 빌드 단계 요약
 
 | Phase | 제목 | 산출물 | 상태 |
 |-------|------|--------|------|
@@ -270,11 +335,17 @@ Dexia 이벤트 ──► dexia/integrations/webhook.py ──POST(x-internal-se
 | 2.5 | Micro-Team | `MultiAgentEnv`, 정찰+자폭 킬체인 (2 정책) | ✅ |
 | 3 | Swarm + DR | 6기(2정찰+4자폭), 익스트림 DR | ✅ |
 | 4 | Ground Threats + SITL | Anti-Air + SITL/PWM 브리지 | ✅ |
-| 5 | GCS HUD + RAG | Next.js MapLibre 전술 지도 + 모의 RAG | ✅ |
+| 5 | GCS HUD | Next.js MapLibre 전술 지도(3D 지형·MGRS·심볼로지) | ✅ |
+| 6 (AIP) | DroneOntology | schema/registry/serializer + ActionBus(MAC·감사) | ✅ |
+| 7 (AIP) | OSS API + k-LLM | `/ontology/*` + Gateway(라우팅·감사) | ✅ |
+| 8 (AIP) | OAG + Logic 블록 | OAG 컨텍스트 + 블록 체인, mockRag 제거 | ✅ |
+| A/HITL | 이벤트 버스 + 결재 | Redis/SSE + FastAPI 제어 + 승인 카드 | ✅ |
+| 9 | Evals + 관찰성 | EpisodeEvalSuite + Evals 패널 | ⬜ |
+| 10 | DexiaRuntime | docker-compose + dexia.config.yaml + 에어갭 | ⬜ |
 
 ---
 
-## 15. 실행
+## 16. 실행
 
 ```powershell
 # Phase 1 (3-DOF + Plotly) — 시스템 Python 3.13
@@ -284,14 +355,20 @@ python test_phase1.py
 .\.venv312\Scripts\python.exe train_phase3.py
 .\.venv312\Scripts\python.exe eval_phase3.py
 
-# 실시간 GCS (터미널 2개)
-.\.venv312\Scripts\python.exe telemetry_stream.py --hz 10      # 1) 스트리머
-cd dexia-hud; npm install; npm run dev                          # 2) HUD → localhost:3000
+# --- 풀 AIP 스택 (터미널/서비스) ---
+docker start dexia-redis                                          # 0) 이벤트 버스
+.\.venv312\Scripts\python.exe telemetry_stream.py --hz 10         # 1) 스트리머(+온톨로지)
+.\.venv312\Scripts\python.exe -m uvicorn dexia.api.sim_api:app --port 8000  # 2) 제어/AI API
+cd dexia-hud; npm install; npm run dev                            # 3) HUD → localhost:3000
+# (Ollama 데몬 :11434 가동 필요 — 로컬 LLM 추론)
 ```
+
+> 검증 테스트: `test_aip_bc.py`(FastAPI+에이전트) · `test_ontology.py`(Phase 6) ·
+> `test_phase7_oss.py`(OSS+게이트웨이) · `test_phase8_oag.py`(OAG+Logic 블록).
 
 ---
 
-## 16. 핵심 설계 결정 (요약)
+## 17. 핵심 설계 결정 (요약)
 
 | 결정 | 이유 |
 |------|------|
@@ -301,4 +378,9 @@ cd dexia-hud; npm install; npm run dev                          # 2) HUD → loc
 | 정적 에이전트 집합 + 손실 래치 | RLlib MultiAgentEnv 견고성, HUD 사유 표시 일관성 |
 | 명령형 지도 갱신 + memo | 고FPS, WebGL 캔버스 재조정 회피 |
 | 웹훅 논블로킹 + fail-closed | Sender 무중단 / Receiver 보안 기본값 |
+| **온톨로지 사후 변환**(스트리머) | 물리 hot loop 무지연, 불변 경계 보존 |
+| **DualSink**(JSON+Redis) | Redis 장애 시 폴링 폴백 — 무중단 |
+| **k-LLM Gateway 단일 인터페이스** | 멀티모델 라우팅 + 토큰/레이턴시 감사 + 에어갭 |
+| **OAG(벡터DB 미사용)** | 상태가 이미 구조화 → 타입 객체+엣지 직접 주입 |
+| **ActionBus 거버넌스 + HITL** | LLM 자동실행 금지, MAC 검증 → 인간 승인 → 실행 |
 ```

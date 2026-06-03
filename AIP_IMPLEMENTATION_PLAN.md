@@ -27,7 +27,7 @@ Logic 블록 체인·Evals·선언적 배포**가 빠져 있고, **AI 에이전�
 | **7. Registry API + k-LLM** | OSS REST `/ontology/*`, SSE `/stream`, k-LLM Gateway | 🟡 **부분** | ✅ SSE `/api/stream`+Redis, ✅ FastAPI `dexia/api/sim_api.py`(쓰기 경로). ❌ `/ontology/*` 쿼리, ❌ 멀티모델 게이트웨이/감사 |
 | **8. OAG + Logic 블록** | 실 LLM, TacticalAssess/KillChain/CommsRisk/RouteOptim 블록 | 🟡 **부분** | ✅ 실 Ollama 에이전트 `dexia/ai/tactical_agent.py`(함수호출 COA). ❌ OAG(온톨로지 주입), ❌ Logic 블록 체인, ❌ 프론트 mockRag 대체 |
 | **9. Evals + 관찰가능성** | EpisodeEvalSuite, jsonl 감사 3종, Evals 패널 | ✅ **완료** | `dexia/evals/`(metrics·audit·suite), 6메트릭 임계값 자동판정, `evals_results.jsonl`, `/api/evals/*`, HUD `EvalsPanel`, `eval_phase9.py`/`test_phase9_evals.py` |
-| **10. DexiaRuntime** | docker-compose, dexia.config.yaml, HealthMonitor, 에어갭 | 🟡 **부분** | ✅ Redis 컨테이너(`dexia-redis`) 주 경로화. ❌ compose 전체/설정파일/헬스모니터/에어갭 |
+| **10. DexiaRuntime** | docker-compose, dexia.config.yaml, HealthMonitor, 에어갭 | ✅ **완료** | `docker-compose.yml`(5서비스, `docker compose config` 통과), `dexia.config.yaml`+`dexia/runtime/config.py`(기본<-yaml<-env), `HealthMonitor`(틱정체→재시작)+`/api/health`, 에어갭=로컬LLM 강제 |
 
 ---
 
@@ -103,19 +103,30 @@ Logic 블록 체인·Evals·선언적 배포**가 빠져 있고, **AI 에이전�
 - ✅ `evals_results.jsonl` 누적 트레일 + HUD `EvalsPanel`(`/api/evals/*` 프록시, 라이브 mission-so-far 평가)
 - ✅ CLI `eval_phase9.py`(체크포인트 롤아웃) + `test_phase9_evals.py`(임계값/파서/누적/어댑터 전부 PASS)
 
-### Sprint 6 — Phase 10 DexiaRuntime
-- `docker-compose.yml` (dexia-sim 3.12 / dexia-api 3.13 / dexia-hud / dexia-evals / redis)
-- `dexia.config.yaml` (scenario·hz·llm_provider·evals·aa 토글) + HealthMonitor(틱 정체 감지→재시작)
-- 에어갭 모드(llama3 GGUF, MapLibre mbtiles 오프라인 타일)
-- ✔ 검증: 단일 명령 기동 + 헬스체크
+### Sprint 6 — Phase 10 DexiaRuntime ✅ 완료
+- ✅ `docker-compose.yml` 5서비스(redis / dexia-sim 3.12 / dexia-api 3.13 / dexia-evals / dexia-hud) + `docker/Dockerfile.{sim,api,evals}`·`dexia-hud/Dockerfile`·`.dockerignore` — `docker compose config` 검증 통과
+- ✅ `dexia.config.yaml`(scenario·hz·llm_provider·evals 임계값·aa·airgap·redis) + `dexia/runtime/config.py`(기본<-yaml<-env override, `.apply()`로 evals 임계값 주입)
+- ✅ `dexia/runtime/health.py` HealthMonitor(텔레메트리 하트비트 틱 정체 감지) + `/api/health` 스택 롤업; compose `restart: unless-stopped`로 정체 스트리머 자동 재기동
+- ✅ 에어갭 모드: `airgap=true` → `llm_provider`를 로컬 ollama로 강제(무송신); HUD 오프라인 타일은 mbtiles 자산 연결 지점만 남김
+- ✅ `dexia/runtime/evals_worker.py`(dexia-evals 서비스: 라이브 mission 주기 채점) + `test_phase10_runtime.py` 전부 PASS
 
 ---
 
-## 5. 즉시 착수 (다음 1개)
-**Sprint 1 (HITL 결재 카드)** — 가장 적은 작업으로 AIP 루프가 *눈에 보이게* 완성된다.
-이미 `TacticalAgent`(실 LLM)와 `sim_api`(실행 경로)와 SSE가 다 있으므로, **프론트 카드 +
-`/assess` 엔드포인트 연결**만 하면 된다.
+## 5. 현황 — Sprint 1–6 전부 완료 ✅
+계획서 Phase 6–10이 모두 구현·검증되었다. AIP 루프 "감지→온톨로지→OAG/Logic→
+HITL 결재→물리 실행→Evals/관찰가능성→선언적 런타임"이 수직으로 완결된다.
 
-> 리스크 메모(계획서 §4 반영): ① 온톨로지 직렬화는 별도 스레드(시뮬 루프 무지연),
-> ② LLM 레이턴시는 비동기+AbortController(HUD 렌더 분리), ③ ActionBus는 학습 중 bypass,
-> ④ Python 3.12/3.13 분리·`PhysicsEngine` ABC·정적 에이전트 집합은 **불변**.
+| Sprint | Phase | 상태 |
+|---|---|---|
+| 1 | HITL 결재 루프 | ✅ `AIStaffCard` + `/api/sim/assess` |
+| 2 | 6 DroneOntology | ✅ `dexia/ontology/` (schema·registry·action_bus·serializer) |
+| 3 | 7 OSS API + k-LLM | ✅ `/ontology/*` + `dexia/api/llm_gateway.py` |
+| 4 | 8 OAG + Logic 블록 | ✅ `dexia/ai/` (oag·blocks·pipeline), mockRag 제거 |
+| 5 | 9 Evals + 관찰가능성 | ✅ `dexia/evals/` + HUD `EvalsPanel` + `eval_phase9.py` |
+| 6 | 10 DexiaRuntime | ✅ `docker-compose.yml` + `dexia/runtime/` (config·health·evals_worker) |
+
+기동: `docker compose up --build` → `curl localhost:8000/api/health` → `localhost:3000`.
+
+> 불변 경계(계획서 §4): ① 온톨로지 직렬화는 시뮬 루프 밖, ② LLM 레이턴시는 비동기,
+> ③ ActionBus는 학습 중 bypass, ④ Python 3.12/3.13 분리·`PhysicsEngine` ABC·정적
+> 에이전트 집합은 **유지**.

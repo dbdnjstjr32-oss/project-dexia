@@ -94,7 +94,11 @@ class RedisSink:
     def __init__(self, key: str = REDIS_KEY, maxlen: int = 2000) -> None:
         import redis  # only imported if available
 
-        self.client = redis.Redis(host="127.0.0.1", port=6379, db=0, socket_connect_timeout=0.5)
+        # Honour the declarative config (docker-compose injects REDIS_HOST/PORT);
+        # defaults keep the single-host zero-setup path on 127.0.0.1:6379.
+        host = os.environ.get("REDIS_HOST", "127.0.0.1")
+        port = int(os.environ.get("REDIS_PORT", "6379"))
+        self.client = redis.Redis(host=host, port=port, db=0, socket_connect_timeout=0.5)
         self.client.ping()              # raises if no server -> caller falls back
         self.key = key
         self.maxlen = maxlen

@@ -1,0 +1,48 @@
+# Dexia Runtime — declarative configuration (AIP Phase 10).
+#
+# The single source of truth for a Dexia deployment. Every service
+# (dexia-sim / dexia-api / dexia-hud / dexia-evals) reads this file via
+# dexia.runtime.config.load_config(), so a scenario is launched declaratively
+# rather than by hand-tuned flags. Environment variables override any field
+# (see config.py ENV_OVERRIDES) — that's how docker-compose injects per-service
+# settings without editing this file.
+
+runtime:
+  scenario: interactive        # interactive (C2 builder) | scripted
+  hz: 10.0                      # streamer tick rate
+  airgap: false                # true => local-only LLM + offline map tiles, no egress
+
+sim:
+  enable_aa: true              # anti-air battery live
+  num_recon: 2
+  num_kami: 4
+
+llm:
+  provider: ollama             # ollama (local) | anthropic | openai
+  tactical_model: "llama3.1:8b-instruct-q4_K_M"
+  summary_model: "qwen2.5:7b"
+  host: null                   # ollama host; null => default 127.0.0.1:11434
+
+evals:
+  # Thresholds applied to EpisodeEvalSuite (Phase 9). Tuning the bar lives here,
+  # not in code — load_config().apply() pushes these into evals.metrics.THRESHOLDS.
+  thresholds:
+    kill_efficiency: 0.50      # max
+    recon_survival: 0.50       # max
+    net_survivability: 0.70    # max
+    aa_engagement: 0.50        # min (lower = we evaded)
+    broadcast_latency: 250     # min (ticks)
+    llm_accuracy: 0.90         # max
+
+redis:
+  enabled: true                # primary event bus; falls back to JSON file if down
+  host: 127.0.0.1
+  port: 6379
+
+health:
+  stall_seconds: 5.0           # telemetry age beyond this => sim considered stalled
+  restart_on_stall: true       # supervisor restarts a stalled streamer
+
+services:
+  api_port: 8000
+  hud_port: 3000

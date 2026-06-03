@@ -1,0 +1,75 @@
+# Dexia Runtime — declarative 5-service stack (AIP Phase 10).
+#
+#   docker compose up --build          # single-command bring-up
+#   curl http://localhost:8000/api/health   # stack-wide health rollup
+#   open http://localhost:3000              # Ground Control Station
+#
+# The project root is bind-mounted into the Python services at /app so they share
+# the runtime trails (telemetry.json, *_audit.jsonl, ontology_state.json,
+# evals_results.jsonl, commands.json) — the same file-based path Dexia uses on a
+# laptop. Redis is the primary low-latency bus; the JSON files are the fallback.
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: dexia-redis
+    ports: ["6379:6379"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  dexia-sim:
+    build: { context: ., dockerfile: docker/Dockerfile.sim }
+    container_name: dexia-sim
+    working_dir: /app
+    volumes: [".:/app"]
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DEXIA_HZ=${DEXIA_HZ:-10}
+      - DEXIA_SCENARIO=${DEXIA_SCENARIO:-interactive}
+    depends_on:
+      redis: { condition: service_healthy }
+    # The streamer is the heartbeat; if it wedges, the platform bounces it.
+    restart: unless-stopped
+
+  dexia-api:
+    build: { context: ., dockerfile: docker/Dockerfile.api }
+    container_name: dexia-api
+    working_dir: /app
+    volumes: [".:/app"]
+    ports: ["8000:8000"]
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DEXIA_AIRGAP=${DEXIA_AIRGAP:-false}
+      - OLLAMA_HOST=${OLLAMA_HOST:-}
+    depends_on:
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
+  dexia-evals:
+    build: { context: ., dockerfile: docker/Dockerfile.evals }
+    container_name: dexia-evals
+    working_dir: /app
+    volumes: [".:/app"]
+    environment:
+      - DEXIA_EVALS_INTERVAL=${DEXIA_EVALS_INTERVAL:-30}
+    command: ["python", "-m", "dexia.runtime.evals_worker", "--interval", "30"]
+    depends_on: [dexia-sim]
+    restart: unless-stopped
+
+  dexia-hud:
+    build: { context: ./dexia-hud, dockerfile: Dockerfile }
+    container_name: dexia-hud
+    ports: ["3000:3000"]
+    environment:
+      - SIM_API_URL=http://dexia-api:8000
+      - TELEMETRY_PATH=/host/telemetry.json
+    volumes:
+      - ".:/host:ro"        # read the shared telemetry snapshot
+    depends_on: [dexia-api]
+    restart: unless-stopped

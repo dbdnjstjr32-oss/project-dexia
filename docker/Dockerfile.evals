@@ -1,0 +1,15 @@
+# dexia-evals — periodic live-mission EpisodeEvalSuite worker.
+# Pure-stdlib evals layer (only PyYAML for config), so the smallest image of all.
+FROM python:3.12-slim
+
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+COPY requirements-runtime.txt .
+RUN pip install --no-cache-dir PyYAML>=6.0
+
+COPY dexia/ ./dexia/
+COPY dexia.config.yaml ./
+
+# Continuously score the current mission and append to evals_results.jsonl.
+CMD ["python", "-m", "dexia.runtime.evals_worker", "--interval", "30"]

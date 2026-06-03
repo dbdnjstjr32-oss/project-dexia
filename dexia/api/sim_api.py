@@ -32,6 +32,7 @@ from ..evals import (
     episode_from_telemetry,
     observability_summary,
 )
+from ..runtime import HealthMonitor, get_config
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TELEMETRY_PATH = os.path.join(ROOT, "telemetry.json")
@@ -54,6 +55,16 @@ def _eval_suite() -> EpisodeEvalSuite:
     if _EVAL_SUITE is None:
         _EVAL_SUITE = EpisodeEvalSuite()
     return _EVAL_SUITE
+
+
+_MONITOR: HealthMonitor | None = None
+
+
+def _monitor() -> HealthMonitor:
+    global _MONITOR
+    if _MONITOR is None:
+        _MONITOR = HealthMonitor(TELEMETRY_PATH, stall_seconds=get_config().stall_seconds)
+    return _MONITOR
 
 app = FastAPI(
     title="Dexia Simulator Control API",
@@ -316,3 +327,22 @@ def evals_run() -> dict:
     telem = telemetry()  # raises 503 if the streamer isn't writing telemetry
     ep = episode_from_telemetry(telem)
     return _eval_suite().evaluate(ep)
+
+
+# --------------------------------------------------------------------------- #
+# Runtime health (Phase 10) — stack-wide liveness rollup.
+# --------------------------------------------------------------------------- #
+@app.get("/api/health")
+def stack_health() -> dict:
+    """HealthMonitor rollup: telemetry freshness/stall + declared config.
+    The control API itself is implicitly healthy (it answered)."""
+    mon = _monitor()
+    mon.beat("dexia-api", ok=True, detail="control plane responsive")
+    rollup = mon.report()
+    cfg = get_config()
+    rollup["config"] = {
+        "scenario": cfg.scenario, "hz": cfg.hz, "airgap": cfg.airgap,
+        "llm_provider": cfg.llm_provider, "redis_enabled": cfg.redis_enabled,
+        "stall_seconds": cfg.stall_seconds, "source": cfg.source,
+    }
+    return rollup

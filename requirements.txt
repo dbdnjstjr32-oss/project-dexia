@@ -6,3 +6,8 @@ plotly>=6.0
 # --- Future phases (not required for Phase 1) ---
 # mujoco>=3.0          # 3-DOF/6-DOF physics backend (swap behind PhysicsEngine ABC)
 # ray[rllib]>=2.9      # MARL training (multi-agent scaling)
+
+# --- Runtime / AIP services (Phase 7-10) ---
+PyYAML>=6.0            # declarative dexia.config.yaml (Phase 10)
+# The dexia-api / dexia-evals services pin their thin deps in
+# requirements-runtime.txt (fastapi, uvicorn, pydantic, redis, ollama, PyYAML).

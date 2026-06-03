@@ -1,0 +1,42 @@
+[
+  {
+    "id": "prof_default_quad",
+    "name": "Standard Quad",
+    "topology": "quad",
+    "mass": 0.6,
+    "arm_length": 0.11,
+    "max_thrust": 7,
+    "drag_coeff": 0.1,
+    "updated_at": "2026-06-03T00:00:00.000Z"
+  },
+  {
+    "id": "prof_recon_hexa",
+    "name": "Recon Hexa",
+    "topology": "hexa",
+    "mass": 0.9,
+    "arm_length": 0.16,
+    "max_thrust": 8,
+    "drag_coeff": 0.15,
+    "updated_at": "2026-06-03T00:00:00.000Z"
+  },
+  {
+    "id": "prof_tandem_vtol",
+    "name": "Tandem Tiltrotor VTOL",
+    "topology": "tandem",
+    "mass": 1.4,
+    "arm_length": 0.22,
+    "max_thrust": 12,
+    "drag_coeff": 0.35,
+    "updated_at": "2026-06-03T00:00:00.000Z"
+  },
+  {
+    "id": "prof_xss29sv48m",
+    "name": "Garage API Tandem",
+    "topology": "tandem",
+    "mass": 1.6,
+    "arm_length": 0.24,
+    "max_thrust": 13,
+    "drag_coeff": 0.4,
+    "updated_at": "2026-06-03T05:22:00.337Z"
+  }
+]

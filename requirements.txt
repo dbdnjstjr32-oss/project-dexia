@@ -1,0 +1,8 @@
+# Dexia — Phase 1 dependencies
+numpy>=1.26
+gymnasium>=1.0
+plotly>=6.0
+
+# --- Future phases (not required for Phase 1) ---
+# mujoco>=3.0          # 3-DOF/6-DOF physics backend (swap behind PhysicsEngine ABC)
+# ray[rllib]>=2.9      # MARL training (multi-agent scaling)

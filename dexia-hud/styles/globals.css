@@ -1,0 +1,269 @@
+html,
+body,
+#__next {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #0b0f14;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #1f2933;
+  border-radius: 4px;
+}
+
+/* ---- Drone map markers (created imperatively by TacticalMap) ---- */
+.dx-marker {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+.dx-marker.recon {
+  color: #2f9bff;
+}
+.dx-marker.kami {
+  color: #ff3b3b;
+}
+.dx-marker.lost {
+  color: #7a7a7a;
+}
+
+.dx-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: currentColor;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 8px currentColor;
+}
+
+.dx-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.45;
+  transform: translate(-50%, -50%);
+  animation: dx-pulse 1.6s ease-out infinite;
+}
+.dx-marker.lost .dx-ring {
+  animation: none;
+  opacity: 0;
+}
+
+.dx-label {
+  position: absolute;
+  left: 15px;
+  top: -3px;
+  white-space: nowrap;
+  font: 600 10px/1.2 'Segoe UI', system-ui, sans-serif;
+  color: #cfe3ff;
+  text-shadow: 0 0 4px #000, 0 0 4px #000;
+}
+
+@keyframes dx-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.5;
+  }
+  80% {
+    transform: translate(-50%, -50%) scale(3.4);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* deployable (pool-spawned) drones get a distinct dashed halo */
+.dx-marker.deployable .dx-dot {
+  border-style: dashed;
+  border-color: #7cffb2;
+}
+
+/* STAGED drones (placed, not yet activated) — dimmed, dashed, no pulse */
+.dx-marker.staged .dx-dot {
+  border-style: dashed;
+  opacity: 0.85;
+}
+.dx-marker.staged .dx-ring {
+  animation: none;
+  opacity: 0.15;
+}
+.dx-marker.staged .dx-label {
+  color: #9fb2c6;
+}
+
+/* Friendly base (아군 진영) marker */
+.dx-base {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+.dx-base-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: rgba(64, 169, 255, 0.25);
+  border: 1.5px solid #40a9ff;
+  box-shadow: 0 0 10px rgba(64, 169, 255, 0.6);
+}
+.dx-base-label {
+  position: absolute;
+  left: 15px;
+  top: -3px;
+  white-space: nowrap;
+  font: 700 10px/1.2 'Segoe UI', system-ui, sans-serif;
+  color: #9fd0ff;
+  text-shadow: 0 0 4px #000, 0 0 4px #000;
+}
+
+/* AA battery status popup (ammo / threat) */
+.dx-aa-popup {
+  background: rgba(10, 14, 19, 0.9);
+  border: 1px solid #2a3441;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font: 600 10px/1.3 'Segoe UI', system-ui, sans-serif;
+  color: #cfe3ff;
+  min-width: 96px;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+.dx-aa-name {
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  margin-bottom: 3px;
+}
+.dx-aa-row {
+  display: flex;
+  justify-content: space-between;
+  color: #9fb2c6;
+}
+.dx-aa-bar {
+  height: 4px;
+  background: #1f2933;
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 3px 0;
+}
+.dx-aa-bar span {
+  display: block;
+  height: 100%;
+}
+
+/* Tactical map COLOUR INVERSION — toggled by the `.dx-invert` class on the map
+   container. Applied only to the WebGL canvas, so the basemap (and on-canvas
+   AoE layers) invert while the DOM drone markers, AA popup, and map controls
+   stay readable. invert(1)+hue-rotate(180) keeps hues roughly natural. */
+.dx-invert .maplibregl-canvas {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* ===== MIL-STD-2525-style unit symbology =====================
+   friendly = blue rectangle, hostile = red diamond, with callsign +
+   equipment labels. DOM markers (not inverted by the canvas filter). */
+.dx-unit {
+  position: relative;
+  width: 0;
+  height: 0;
+  pointer-events: auto;
+  cursor: pointer;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+.dx-unit .dx-shape {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+}
+/* friendly ground unit — blue rectangle */
+.dx-unit.friendly .dx-shape,
+.dx-unit.friendly-hq .dx-shape {
+  width: 22px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+  background: rgba(64, 169, 255, 0.22);
+  border: 2px solid #4aa3ff;
+  box-shadow: 0 0 8px rgba(64, 169, 255, 0.55);
+}
+.dx-unit.friendly-hq .dx-shape {
+  width: 26px;
+  height: 16px;
+  border-color: #7cc4ff;
+}
+/* hostile unit — red diamond */
+.dx-unit.hostile .dx-shape {
+  width: 17px;
+  height: 17px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: rgba(255, 60, 60, 0.3);
+  border: 2px solid #ff4d4d;
+  box-shadow: 0 0 12px rgba(255, 60, 60, 0.65);
+}
+/* lost / staged states */
+.dx-unit.lost .dx-shape {
+  width: 18px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  background: transparent;
+  border: 2px dashed #8a8a8a;
+  opacity: 0.6;
+}
+.dx-unit.staged .dx-shape {
+  border-style: dashed;
+  opacity: 0.8;
+}
+.dx-name {
+  position: absolute;
+  left: 50%;
+  top: 11px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-weight: 700;
+  font-size: 10px;
+  line-height: 1.2;
+  color: #dbe6f2;
+  text-shadow: 0 0 4px #000, 0 0 4px #000;
+}
+.dx-unit.hostile .dx-name {
+  color: #ff9a9a;
+}
+.dx-unit.staged .dx-name {
+  color: #9fb2c6;
+}
+.dx-equip {
+  position: absolute;
+  left: 50%;
+  top: 23px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 9px;
+  line-height: 1.2;
+  color: #9fb2c6;
+  text-shadow: 0 0 4px #000, 0 0 4px #000;
+}
+
+/* MapLibre attaches its own canvas; keep its controls dark-friendly */
+.maplibregl-ctrl-group {
+  background: rgba(13, 18, 24, 0.85) !important;
+}

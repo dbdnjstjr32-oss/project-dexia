@@ -26,7 +26,7 @@ Logic 블록 체인·Evals·선언적 배포**가 빠져 있고, **AI 에이전�
 | **6. DroneOntology** | schema·registry·ActionBus·serializer | ❌ **미완** | flat `telemetry.json`만 존재. 온톨로지 객체/관계/MAC 검증 없음 |
 | **7. Registry API + k-LLM** | OSS REST `/ontology/*`, SSE `/stream`, k-LLM Gateway | 🟡 **부분** | ✅ SSE `/api/stream`+Redis, ✅ FastAPI `dexia/api/sim_api.py`(쓰기 경로). ❌ `/ontology/*` 쿼리, ❌ 멀티모델 게이트웨이/감사 |
 | **8. OAG + Logic 블록** | 실 LLM, TacticalAssess/KillChain/CommsRisk/RouteOptim 블록 | 🟡 **부분** | ✅ 실 Ollama 에이전트 `dexia/ai/tactical_agent.py`(함수호출 COA). ❌ OAG(온톨로지 주입), ❌ Logic 블록 체인, ❌ 프론트 mockRag 대체 |
-| **9. Evals + 관찰가능성** | EpisodeEvalSuite, jsonl 감사 3종, Evals 패널 | ❌ **미완** | `eval_phase3.py`(HTML 리포트) 기초만. 구조화 Eval/감사로그/대시보드 없음 |
+| **9. Evals + 관찰가능성** | EpisodeEvalSuite, jsonl 감사 3종, Evals 패널 | ✅ **완료** | `dexia/evals/`(metrics·audit·suite), 6메트릭 임계값 자동판정, `evals_results.jsonl`, `/api/evals/*`, HUD `EvalsPanel`, `eval_phase9.py`/`test_phase9_evals.py` |
 | **10. DexiaRuntime** | docker-compose, dexia.config.yaml, HealthMonitor, 에어갭 | 🟡 **부분** | ✅ Redis 컨테이너(`dexia-redis`) 주 경로화. ❌ compose 전체/설정파일/헬스모니터/에어갭 |
 
 ---
@@ -97,11 +97,11 @@ Logic 블록 체인·Evals·선언적 배포**가 빠져 있고, **AI 에이전�
 - 프론트 `mockRag.js` **완전 제거** → 실 LLM 블록 결과 표면화
 - ✔ 검증: 블록별 단위 + 체인 통합
 
-### Sprint 5 — Phase 9 Evals + 관찰가능성
-- 감사로그 3종(`ontology_state`/`action_audit`/`llm_audit` .jsonl) 불변 트레일
-- `EpisodeEvalSuite` (Kill Efficiency, Recon Survival, Net Surv, AA Engagement, Broadcast Latency, LLM Accuracy)
-- `evals_results.jsonl` + HUD Evals 패널 (pandas/DuckDB 분석)
-- ✔ 검증: 임계값 기준 자동 판정 리포트
+### Sprint 5 — Phase 9 Evals + 관찰가능성 ✅ 완료
+- ✅ 감사로그 3종(`ontology_state`/`action_audit`/`llm_audit`) 불변 트레일 리더 — `dexia/evals/audit.py`(읽기 전용 요약)
+- ✅ `EpisodeEvalSuite` 6메트릭 임계값 자동 판정 (Kill Efficiency·Recon Survival·Net Surv·AA Engagement·Broadcast Latency·LLM Accuracy) — `dexia/evals/{metrics,suite}.py`
+- ✅ `evals_results.jsonl` 누적 트레일 + HUD `EvalsPanel`(`/api/evals/*` 프록시, 라이브 mission-so-far 평가)
+- ✅ CLI `eval_phase9.py`(체크포인트 롤아웃) + `test_phase9_evals.py`(임계값/파서/누적/어댑터 전부 PASS)
 
 ### Sprint 6 — Phase 10 DexiaRuntime
 - `docker-compose.yml` (dexia-sim 3.12 / dexia-api 3.13 / dexia-hud / dexia-evals / redis)

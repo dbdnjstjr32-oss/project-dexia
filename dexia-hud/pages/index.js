@@ -4,6 +4,7 @@ import { useTelemetry } from '../lib/useTelemetry';
 import { lngLatToLocal } from '../lib/geo';
 import DroneGarage from '../components/DroneGarage';
 import AIStaffCard from '../components/AIStaffCard';
+import EvalsPanel from '../components/EvalsPanel';
 
 // MapLibre touches `window`; load the map client-side only.
 const TacticalMap = dynamic(() => import('../components/TacticalMap'), { ssr: false });
@@ -261,6 +262,9 @@ const RightPanel = memo(function RightPanel({ telemetry }) {
         <Gauge label="WIND GUST" value={`${wind.toFixed(2)} N`} color="#40a9ff" pct={Math.min(100, (wind / 8) * 100)} />
         <Gauge label="ATTRITION" value={`${lost} / 6`} color={lost === 0 ? '#52c41a' : lost < 3 ? '#faad14' : '#ff4d4f'} pct={(lost / 6) * 100} />
       </div>
+
+      {/* AIP Phase 9: EpisodeEvalSuite scorecard + immutable audit trails */}
+      <EvalsPanel />
     </div>
   );
 });

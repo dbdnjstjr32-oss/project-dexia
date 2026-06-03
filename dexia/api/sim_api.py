@@ -27,6 +27,11 @@ from pydantic import BaseModel, Field
 from ..integrations.command_queue import append_command, DEFAULT_PATH as COMMANDS_PATH
 from ..ai.tactical_agent import TacticalAgent
 from ..ai.pipeline import TacticalPipeline
+from ..evals import (
+    EpisodeEvalSuite,
+    episode_from_telemetry,
+    observability_summary,
+)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TELEMETRY_PATH = os.path.join(ROOT, "telemetry.json")
@@ -34,6 +39,7 @@ ONTOLOGY_PATH = os.path.join(ROOT, "ontology_state.json")
 
 # Lazily-constructed OAG + Logic-block tactical pipeline.
 _PIPELINE: TacticalPipeline | None = None
+_EVAL_SUITE: EpisodeEvalSuite | None = None
 
 
 def _pipeline() -> TacticalPipeline:
@@ -41,6 +47,13 @@ def _pipeline() -> TacticalPipeline:
     if _PIPELINE is None:
         _PIPELINE = TacticalPipeline()
     return _PIPELINE
+
+
+def _eval_suite() -> EpisodeEvalSuite:
+    global _EVAL_SUITE
+    if _EVAL_SUITE is None:
+        _EVAL_SUITE = EpisodeEvalSuite()
+    return _EVAL_SUITE
 
 app = FastAPI(
     title="Dexia Simulator Control API",
@@ -265,3 +278,41 @@ def assess() -> AssessResponse:
         killchain_decision=coa.get("killchain_decision"),
         blocks=coa.get("blocks", []),
     )
+
+
+# --------------------------------------------------------------------------- #
+# Evals + observability (Phase 9)
+# EpisodeEvalSuite scorecard + the three immutable audit-trail summaries.
+# --------------------------------------------------------------------------- #
+@app.get("/api/evals/latest")
+def evals_latest() -> dict:
+    """The most recent eval report, or the live audit-trail observability block
+    if no episode has been scored yet (so the HUD panel is never empty)."""
+    latest = _eval_suite().latest()
+    if latest is not None:
+        return latest
+    return {"verdict": None, "metrics": [], "observability": observability_summary()}
+
+
+@app.get("/api/evals/history")
+def evals_history(limit: int = 20) -> dict:
+    rows = _eval_suite().history(limit=max(1, min(limit, 200)))
+    return {"count": len(rows), "reports": rows}
+
+
+@app.get("/api/evals/audit")
+def evals_audit() -> dict:
+    """Live summaries of the three immutable audit trails (no episode needed)."""
+    return observability_summary()
+
+
+@app.post("/api/evals/run")
+def evals_run() -> dict:
+    """Score the CURRENT mission from the live telemetry snapshot + audit trails,
+    append the verdict to evals_results.jsonl, and return the report.
+
+    This is a *mission-so-far* eval (single-tick series, broadcast latency is an
+    upper bound). The full checkpoint-rollout eval is the eval_phase9.py CLI."""
+    telem = telemetry()  # raises 503 if the streamer isn't writing telemetry
+    ep = episode_from_telemetry(telem)
+    return _eval_suite().evaluate(ep)

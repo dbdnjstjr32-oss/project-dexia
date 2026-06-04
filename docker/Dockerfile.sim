@@ -12,10 +12,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt requirements-runtime.txt ./
-# Core sim deps + the event-bus client. Ray/MuJoCo/Torch are large; uncomment for
-# the full MARL backend (the 3-DOF NumPy fallback runs without them).
+# Core sim deps + the event-bus client.
 RUN pip install --no-cache-dir -r requirements.txt redis>=5.0 PyYAML>=6.0
-#   pip install --no-cache-dir "ray[rllib]>=2.9" mujoco>=3.0 torch
+# Full MARL backend: DroneMARLEnv subclasses ray.rllib MultiAgentEnv and the
+# physics module imports MuJoCo at top level, so the streamer needs all three.
+# CPU-only Torch keeps the image off the multi-GB CUDA wheels.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir "ray[rllib]>=2.9" "mujoco>=3.0"
 
 COPY dexia/ ./dexia/
 COPY telemetry_stream.py dexia.config.yaml ./

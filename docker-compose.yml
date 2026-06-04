@@ -46,7 +46,11 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - DEXIA_AIRGAP=${DEXIA_AIRGAP:-false}
-      - OLLAMA_HOST=${OLLAMA_HOST:-}
+      # The LLM (Ollama) runs on the host; reach it from the container. Override
+      # with a remote/cloud endpoint, or rely on airgap=local for offline runs.
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux parity (Docker Desktop has it built-in)
     depends_on:
       redis: { condition: service_healthy }
     restart: unless-stopped

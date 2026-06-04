@@ -20,7 +20,7 @@ from typing import Any
 
 from ..api.llm_gateway import LLMGateway, get_gateway
 
-DEFAULT_MODEL = "llama3.1:8b-instruct-q4_K_M"  # cleaner Korean + decent tool use
+DEFAULT_MODEL = "qwen2.5:7b"  # consolidated live model (strong Korean + native tool use); see llm_gateway.ROUTING
 
 _KNOWN_TOOLS = {"deploy_drone", "recall_drone", "activate", "standby"}
 

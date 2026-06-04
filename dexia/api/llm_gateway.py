@@ -25,12 +25,25 @@ DEFAULT_AUDIT_PATH = os.path.join(_ROOT, "llm_audit.jsonl")
 
 # use_case -> (provider, model). Cloud rows only fire if an API key is present;
 # otherwise the gateway transparently falls back to the local Ollama model.
+#
+# Model tiering is hardware-driven (RTX 5070 Laptop, 8 GB VRAM / 32 GB RAM):
+#   * LIVE paths (tactical, summary, airgap) are CONSOLIDATED onto ONE 7B model
+#     so it stays VRAM-resident with zero swap. 8 GB holds exactly one q4 7-8B
+#     model hot; routing two distinct 8B models would thrash (evict+reload, ~3-8s
+#     per switch) every time a mission tick alternates tactical<->summary.
+#     qwen2.5:7b wins the single slot: strong Korean (commander cards) + native
+#     function-calling (COA tool use).
+#   * doctrine (offline After-Action Review self-correction) is batch/async and
+#     latency-insensitive, so it gets the heavyweight gpt-oss:20b (MoE ~13-14 GB,
+#     ~3.6B active/token) — partially offloaded to the 32 GB RAM. Its stronger
+#     reasoning is most valuable here, and the cost is hidden off the live path.
 ROUTING = {
-    "tactical": ("ollama", "llama3.1:8b-instruct-q4_K_M"),  # high precision
-    "summary": ("ollama", "qwen2.5:7b"),                    # fast situation report
-    "airgap": ("ollama", "llama3.1:8b-instruct-q4_K_M"),    # local-only
+    "tactical": ("ollama", "qwen2.5:7b"),   # live COA tool-calling (VRAM-resident)
+    "summary": ("ollama", "qwen2.5:7b"),    # live Korean report (same model -> no swap)
+    "airgap": ("ollama", "qwen2.5:7b"),     # local-only (same resident model)
+    "doctrine": ("ollama", "gpt-oss:20b"),  # async AAR self-correction (RAM-offloaded)
 }
-_FALLBACK = ("ollama", "llama3.1:8b-instruct-q4_K_M")
+_FALLBACK = ("ollama", "qwen2.5:7b")
 
 
 class LLMGateway:
@@ -69,7 +82,18 @@ class LLMGateway:
                     kwargs["tools"] = tools
                 if temperature is not None:
                     kwargs["options"] = {"temperature": float(temperature)}
-                resp = self._ollama.chat(**kwargs)
+                # gpt-oss is a harmony/reasoning model: enable the reasoning
+                # channel so Ollama routes chain-of-thought into message.thinking
+                # and keeps message.content as the clean final answer (the JSON
+                # the doctrine AAR parses). Guarded for older ollama clients that
+                # lack the `think` kwarg.
+                if mdl.startswith("gpt-oss"):
+                    kwargs["think"] = True
+                try:
+                    resp = self._ollama.chat(**kwargs)
+                except TypeError:
+                    kwargs.pop("think", None)
+                    resp = self._ollama.chat(**kwargs)
             else:  # pragma: no cover - cloud stub (no keys in this env)
                 raise RuntimeError(f"provider '{provider}' not configured")
         except Exception as e:

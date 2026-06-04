@@ -127,7 +127,7 @@ class OllamaLLMClient:
 
     name = "ollama"
 
-    def __init__(self, use_case: str = "tactical") -> None:
+    def __init__(self, use_case: str = "doctrine") -> None:
         self.use_case = use_case
         self._fallback = MockLLMClient()
         try:

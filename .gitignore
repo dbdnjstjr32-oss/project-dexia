@@ -21,7 +21,10 @@ checkpoints/
 # --- Runtime artifacts (regenerated every tick/run) ---
 telemetry.json
 commands.json
+*.json.lock
 ontology_state.json
+dexia/aip/pending_proposals.json
+e2e_*.log
 
 # --- Audit / observability logs (runtime, Phase 6-9) ---
 *.jsonl

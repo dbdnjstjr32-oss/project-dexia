@@ -1,0 +1,9 @@
+{
+  "scenario": "SEAD",
+  "version": 1.1,
+  "rules": {
+    "min_scatter_distance_m": 50,
+    "max_altitude_m": 50,
+    "target_priority": "AA_RADAR"
+  }
+}

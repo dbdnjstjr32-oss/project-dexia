@@ -32,6 +32,8 @@ most robust contract for RLlib's MultiAgentEnv.
 
 from __future__ import annotations
 
+import json
+import os
 from typing import Any
 
 import numpy as np
@@ -52,6 +54,12 @@ from ..wargame import AntiAirBattery
 
 RECON_PREFIX = "agent_recon"
 KAMI_PREFIX = "agent_kami"
+
+# AIP Tactical Recipe (doctrine) the physics enforces — Phase 8.6.
+_DEFAULT_RECIPES_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "aip", "recipes.json"
+)
+
 POLICY_RECON = "policy_recon"
 POLICY_KAMI = "policy_kami"
 
@@ -119,6 +127,19 @@ class DroneMARLEnv(MultiAgentEnv):
             **{aid: self.recon_profile for aid in self.recon_ids},
             **{aid: self.kami_profile for aid in self.kami_ids},
         }
+
+        # --- AIP doctrine enforcement (Phase 8.6) ---------------------- #
+        # The physics dynamically respects the AI-learned Tactical Recipe
+        # (dexia/aip/recipes.json): active kamikazes closer than the doctrine's
+        # min_scatter_distance_m receive an artificial repulsive force pushing
+        # them apart. Opt-out (enforce_doctrine=False) keeps training / earlier
+        # phases on their original dynamics.
+        self.enforce_doctrine = bool(cfg.get("enforce_doctrine", True))
+        self.recipes_path = cfg.get("recipes_path", _DEFAULT_RECIPES_PATH)
+        self.doctrine_repel_gain = float(cfg.get("doctrine_repel_gain", 3.0))  # N at contact
+        self.doctrine_repel_max = float(cfg.get("doctrine_repel_max", 4.0))    # N cap per drone
+        self.current_doctrine: dict = {}
+        self.current_doctrine_version = None
 
         # --- one 6-DOF MuJoCo engine + comms + wind per agent ---------- #
         self.engines: dict[str, MuJoCoQuadEngine] = {}
@@ -344,13 +365,74 @@ class DroneMARLEnv(MultiAgentEnv):
             for aid in self.possible_agents
         }
 
+        # Phase 8.6 — load the active Tactical Recipe so the physics respects it.
+        self._load_doctrine()
+
         infos = {aid: {} for aid in self.possible_agents}
         return self._build_obs(), infos
+
+    # ------------------------------------------------------------------ #
+    def _load_doctrine(self) -> None:
+        """Read the latest AIP Tactical Recipe (recipes.json) into the env so
+        ``step()`` can enforce it. Missing/invalid file -> empty doctrine
+        (enforcement becomes a no-op), so the env never hard-fails on it."""
+        rules: dict = {}
+        version = None
+        try:
+            with open(self.recipes_path, "r", encoding="utf-8") as f:
+                recipe = json.load(f)
+            rules = recipe.get("rules", {}) or {}
+            version = recipe.get("version")
+        except (OSError, json.JSONDecodeError, ValueError, TypeError):
+            rules = {}
+        self.current_doctrine = rules
+        self.current_doctrine_version = version
+
+    # ------------------------------------------------------------------ #
+    def _doctrine_repulsion(self) -> dict:
+        """Phase 8.6 "muscles": a capped horizontal repulsive force for every
+        active kamikaze pair closer than the doctrine's min_scatter_distance_m —
+        the physical enforcement of the AI-learned dispersion rule. Returns
+        {agent_id: force(3,)} to be added to each drone's external force."""
+        min_d = float(self.current_doctrine.get("min_scatter_distance_m", 0) or 0.0)
+        if not self.enforce_doctrine or min_d <= 0.0 or not self._armed:
+            return {}
+        kam = [a for a in self.kami_ids if self._active.get(a) and a not in self._lost]
+        if len(kam) < 2:
+            return {}
+        pos = {a: self.engines[a].get_state().position for a in kam}
+        forces = {a: np.zeros(3, dtype=np.float64) for a in kam}
+        for i in range(len(kam)):
+            for j in range(i + 1, len(kam)):
+                ai, aj = kam[i], kam[j]
+                delta = pos[ai][:2] - pos[aj][:2]          # horizontal separation
+                d = float(np.linalg.norm(delta))
+                if d >= min_d:
+                    continue
+                if d < 1e-6:                                # coincident -> deterministic split
+                    ang = 2.0 * np.pi * (i + 1) / len(kam)
+                    dirxy = np.array([np.cos(ang), np.sin(ang)])
+                else:
+                    dirxy = delta / d
+                mag = self.doctrine_repel_gain * (min_d - d) / min_d   # closeness in (0,1]
+                f = np.array([dirxy[0] * mag, dirxy[1] * mag, 0.0])
+                forces[ai] += f
+                forces[aj] -= f
+        # cap each drone's horizontal repulsion so the quad stays controllable
+        for a in kam:
+            m = float(np.linalg.norm(forces[a][:2]))
+            if m > self.doctrine_repel_max:
+                forces[a][:2] *= self.doctrine_repel_max / m
+        return forces
 
     # ================================================================== #
     def step(self, action_dict: dict[str, np.ndarray]):
         self._step_count += 1
         W = self.W
+
+        # Phase 8.6 — AIP doctrine "muscles": repulsion forces (from pre-step
+        # positions) that physically enforce the learned min_scatter_distance_m.
+        repel = self._doctrine_repulsion()
 
         # --- 1) advance physics for every agent (with DR) -------------- #
         states = {}
@@ -391,6 +473,11 @@ class DroneMARLEnv(MultiAgentEnv):
             else:
                 wf = None
             wind_mags[aid] = float(np.linalg.norm(wf)) if wf is not None else 0.0
+
+            # Add the doctrine dispersion force (Phase 8.6) onto the wind channel.
+            rf = repel.get(aid)
+            if rf is not None:
+                wf = rf if wf is None else (wf + rf)
 
             st = eng.step(act, external_force=wf)
             states[aid] = st
@@ -544,6 +631,9 @@ class DroneMARLEnv(MultiAgentEnv):
             "total_lost": len(self._lost),
             "newly_lost": newly_lost,
             "R_team": float(R_team),
+            # Phase 8.6 — which doctrine is currently driving the physics.
+            "doctrine_version": self.current_doctrine_version,
+            "min_scatter_distance_m": self.current_doctrine.get("min_scatter_distance_m"),
         }
         if aa_result is not None:
             team_info["aa"] = {
@@ -572,6 +662,9 @@ class DroneMARLEnv(MultiAgentEnv):
             "lost": set(self._lost),
             "active": {aid: bool(self._active.get(aid, True)) for aid in self.possible_agents},
             "aa": self.aa.telemetry() if self.aa is not None else None,
+            # Phase 8.6 — active AIP doctrine driving the physics.
+            "current_doctrine_version": self.current_doctrine_version,
+            "min_scatter_distance_m": self.current_doctrine.get("min_scatter_distance_m"),
         }
 
     # ================================================================== #

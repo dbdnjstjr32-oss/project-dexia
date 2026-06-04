@@ -5,6 +5,7 @@ import { lngLatToLocal } from '../lib/geo';
 import DroneGarage from '../components/DroneGarage';
 import AIStaffCard from '../components/AIStaffCard';
 import EvalsPanel from '../components/EvalsPanel';
+import HitlApproval from '../components/HitlApproval';
 
 // MapLibre touches `window`; load the map client-side only.
 const TacticalMap = dynamic(() => import('../components/TacticalMap'), { ssr: false });
@@ -191,6 +192,9 @@ export default function Dashboard() {
       </div>
 
       {error && <div style={S.errorBar}>⚠ {error}</div>}
+
+      {/* AIP Phase 8.7: HITL commander approval — gates AI doctrine changes */}
+      <HitlApproval />
     </div>
   );
 }

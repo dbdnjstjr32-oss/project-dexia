@@ -17,6 +17,64 @@ from .schema import (
 )
 
 
+# --------------------------------------------------------------------------- #
+# Phase 6.1 — flat telemetry -> a list of typed Semantic Objects.
+# A focused, registry-friendly view (drones + threats) of the same transform
+# objects_from_telemetry performs, returning a single flat list as the AIP plan
+# specifies. Pure data — no physics, no Ray.
+# --------------------------------------------------------------------------- #
+def parse_telemetry_to_ontology(telemetry_data: dict) -> list:
+    """Instantiate ``DroneObject``/``ThreatObject`` Semantic Objects from a raw
+    flat telemetry dict. Accepts a single ``aa`` threat and/or a ``threats``
+    list, so it works on both ``telemetry.json`` and hand-authored scenarios."""
+    objects: list = []
+
+    for a in telemetry_data.get("agents", []) or []:
+        objects.append(
+            DroneObject(
+                agent_id=a.get("id") or a.get("agent_id", "unknown"),
+                role=a.get("role", ""),
+                kind=a.get("kind", "kami"),
+                position=list(a.get("pos") or a.get("position") or [0.0, 0.0, 0.0]),
+                velocity=list(a.get("vel") or a.get("velocity") or [0.0, 0.0, 0.0]),
+                alt=float(a.get("alt", 0.0)),
+                speed=float(a.get("speed", 0.0)),
+                snr_db=float(a.get("snr_db", 0.0)),
+                link_good=bool(a.get("link_good", True)),
+                status="lost" if a.get("lost") else a.get("status") or a.get("state", "active"),
+                loss_reason=a.get("loss_reason"),
+                equipment=a.get("equipment", "Standard Quad"),
+            )
+        )
+
+    # threats: a 'threats' list takes precedence; else wrap the single 'aa' dict.
+    raw_threats = telemetry_data.get("threats")
+    if raw_threats is None:
+        aa = telemetry_data.get("aa")
+        raw_threats = [aa] if aa else []
+    for i, th in enumerate(raw_threats):
+        if not th:
+            continue
+        engagement = float(th.get("engagement_range", 0.0))
+        objects.append(
+            ThreatObject(
+                aa_id=th.get("aa_id") or th.get("id") or f"aa_{i}",
+                position=list(th.get("position") or th.get("pos") or [0.0, 0.0, 0.0]),
+                radar_range=float(th.get("radar_range", 0.0)),
+                engagement_range=engagement,
+                kill_radius=float(th.get("kill_radius", engagement)),
+                ew_range=float(th.get("ew_range", 0.0)),
+                threat_level=th.get("threat_level", "idle"),
+                ammo=int(th.get("ammo", 0)),
+                max_ammo=int(th.get("max_ammo", 0)),
+                tracked=list(th.get("tracked", [])),
+                active_zones=len(th.get("active_zones", [])) if isinstance(th.get("active_zones"), list)
+                else int(th.get("active_zones", 0)),
+            )
+        )
+    return objects
+
+
 def objects_from_telemetry(record: dict) -> dict:
     """Convert one telemetry record into typed ontology objects + links."""
     drones: list[DroneObject] = []

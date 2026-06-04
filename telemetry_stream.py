@@ -248,6 +248,11 @@ def build_record(env: DroneMARLEnv, tick: int, infos: dict) -> dict:
         "network_survivability": float(team.get("network_survivability", 1.0)),
         "wind_gust": float(max(wind_mags)) if wind_mags else 0.0,
         "armed": armed,
+        # Phase 8.6 — the AIP doctrine version + scatter rule driving the physics.
+        "doctrine": {
+            "version": team.get("doctrine_version"),
+            "min_scatter_distance_m": team.get("min_scatter_distance_m"),
+        },
         "enemy": [float(x) for x in env.target],         # 적 진지
         "friendly": [float(x) for x in env.base_station],  # 아군 진영
         "pool": {

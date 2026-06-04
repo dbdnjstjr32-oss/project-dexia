@@ -11,6 +11,7 @@ either interpreter and never touches the physics hot loop.
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass, field
 from typing import Optional
 
@@ -21,6 +22,31 @@ ACTION_TYPES = ("move", "broadcast", "engage", "abort",
                 "deploy", "recall", "activate", "standby")
 
 DRONE_STATUS = ("staged", "flying", "active", "lost")
+
+
+@dataclass
+class Position:
+    """A strict 3-D coordinate (Phase 6.1). Objects store a plain ``position``
+    list on the wire for JSON/HUD compatibility; ``Position`` is the typed view
+    used for geometry (distance / in-range queries)."""
+
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+
+    def to_list(self) -> list:
+        return [self.x, self.y, self.z]
+
+    def distance_to(self, other: "Position") -> float:
+        return math.dist(self.to_list(), other.to_list())
+
+    @classmethod
+    def from_list(cls, xs) -> "Position":
+        vals = list(xs or []) + [0.0, 0.0, 0.0]
+        return cls(float(vals[0]), float(vals[1]), float(vals[2]))
+
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 
 @dataclass
@@ -42,6 +68,14 @@ class DroneObject:
     def to_dict(self) -> dict:
         return asdict(self)
 
+    def xyz(self) -> Position:
+        """Typed position view for geometry queries."""
+        return Position.from_list(self.position)
+
+    @property
+    def active(self) -> bool:
+        return self.status != "lost"
+
 
 @dataclass
 class ThreatObject:
@@ -49,6 +83,7 @@ class ThreatObject:
     position: list = field(default_factory=lambda: [0.0, 0.0, 0.0])
     radar_range: float = 0.0
     engagement_range: float = 0.0
+    kill_radius: float = 0.0           # lethal splash/engagement radius (Phase 6.1)
     ew_range: float = 0.0
     threat_level: str = "idle"         # idle | radar | kill
     ammo: int = 0
@@ -59,6 +94,14 @@ class ThreatObject:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+    def xyz(self) -> Position:
+        """Typed position view for geometry queries."""
+        return Position.from_list(self.position)
+
+    def lethal_radius(self) -> float:
+        """Effective kill radius — explicit ``kill_radius`` or the engagement range."""
+        return self.kill_radius or self.engagement_range
 
 
 @dataclass

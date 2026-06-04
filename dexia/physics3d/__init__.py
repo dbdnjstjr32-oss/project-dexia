@@ -18,6 +18,7 @@ from .geometry import clear_los, distance3d
 from .ground import GroundVehicleEngine
 from .guidance import arrive, proportional_navigation, pure_pursuit, seek
 from .integrate import clamp, rk4, semi_implicit, wrap_angle
+from .jsbsim_engine import JSBSIM_AVAILABLE, JSBSimEngine, make_air_engine
 from .missile import MissileEngine
 from .state import Body6, quat_from_euler, quat_integrate, quat_to_euler
 from .terrain import Heightfield
@@ -26,6 +27,7 @@ __all__ = [
     "Body6", "quat_from_euler", "quat_to_euler", "quat_integrate",
     "Heightfield",
     "GroundVehicleEngine", "FixedWing3DOFEngine", "isa_density",
+    "JSBSimEngine", "JSBSIM_AVAILABLE", "make_air_engine",
     "BallisticEngine", "MissileEngine",
     "distance3d", "clear_los",
     "pure_pursuit", "seek", "arrive", "proportional_navigation",

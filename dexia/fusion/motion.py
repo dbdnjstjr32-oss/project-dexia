@@ -25,7 +25,7 @@ from __future__ import annotations
 import math
 from typing import Optional
 
-from ..physics3d import FixedWing3DOFEngine, GroundVehicleEngine, Heightfield
+from ..physics3d import GroundVehicleEngine, Heightfield, make_air_engine
 
 # Per-category ground speed defaults (m/s) when the catalog entry doesn't pin one
 # in ``constraints.max_speed_mps``. Kept deliberate/plausible rather than maxed.
@@ -134,8 +134,10 @@ def build_motion(entity, spec, terrain: Heightfield) -> Optional[MotionModel]:
         params = dict(_UAV_PARAMS)
         if spec.constraints.get("cruise_mps"):
             params["cruise"] = float(spec.constraints["cruise_mps"])
-        eng = FixedWing3DOFEngine(**params)
         alt = terrain.height(x0, y0) + _UAV_AGL
+        # a hero aircraft flies a JSBSim 6-DOF FDM (P2); everyone else stays numpy.
+        # make_air_engine falls back to the numpy model when jsbsim is unavailable.
+        eng = make_air_engine(getattr(entity, "hero", False), params, cruise_alt=alt)
         eng.reset((x0, y0, alt), V=params["cruise"])
         return MotionModel(entity, eng, "air", route=wps, cruise_alt=alt)
 

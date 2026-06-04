@@ -41,6 +41,7 @@ class Entity:
     ammo: float = float("inf")            # rounds remaining (inf = not ammo-limited)
     suppressed_until: int = -1            # tick through which EW jamming forces emitter off
     speed_mps: float = 0.0                # override advance speed (0 => ADVANCE_SPEED_MPS)
+    hero: bool = False                    # fly on the JSBSim 6-DOF FDM if available (P2)
     _leg: int = 1                         # index of the current target waypoint
     _offset: tuple = (0.0, 0.0)           # per-unit formation offset
     _motion: object = None                # MotionModel (3D physics path) or None (scripted)
@@ -125,7 +126,7 @@ class WorldState:
                         position=pos, behavior=fe.behavior,
                         route=[list(p) for p in fe.route] if fe.route else None,
                         emitting=_initial_emitting(fe.behavior, spec),
-                        ammo=ammo, _offset=off,
+                        ammo=ammo, _offset=off, hero=fe.hero,
                     )
                     # gate the 3D physics path on terrain presence: mobile entities
                     # get a per-domain motion model; everyone else stays scripted.

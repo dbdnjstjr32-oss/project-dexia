@@ -43,6 +43,7 @@ class ForceElement:
     pos: Optional[list] = None            # [x, y] local metres
     route: Optional[list] = None          # [[x,y], ...] waypoints (mobile entities)
     behavior: str = "static"              # static | advance | static_ad | periodic_jam | ...
+    hero: bool = False                    # fly this aircraft on the JSBSim 6-DOF FDM (P2)
 
     @classmethod
     def from_dict(cls, d: dict) -> "ForceElement":
@@ -53,6 +54,7 @@ class ForceElement:
             pos=list(d["pos"]) if d.get("pos") is not None else None,
             route=[list(p) for p in d["route"]] if d.get("route") else None,
             behavior=str(d.get("behavior", "static")),
+            hero=bool(d.get("hero", False)),
         )
 
 

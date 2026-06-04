@@ -35,7 +35,7 @@ scenario:
 
   blue:
     - {cls: m777_howitzer, n: 2, pos: [-1000, 0]}
-    - {cls: tb2_recon_uav, n: 1, behavior: advance, route: [[-1500, 0], [1500, 0]]}
+    - {cls: tb2_recon_uav, n: 1, behavior: advance, route: [[-1500, 0], [1500, 0]], hero: true}
     - {cls: switchblade,   n: 4, pos: [-1200, 0]}
     - {cls: ew_jammer_gnd, n: 1, pos: [-900, 0]}
     - {cls: ugs_field,     n: 3, pos: [800, 0]}

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
 from typing import Any, Optional
 
@@ -102,11 +103,26 @@ class CommandAck(BaseModel):
 # --------------------------------------------------------------------------- #
 def _enqueue(action: str, **fields: Any) -> CommandAck:
     cmd = {"id": "cmd_" + uuid.uuid4().hex[:14], "action": action, **fields}
-    try:
-        append_command(cmd, path=COMMANDS_PATH)
-    except Exception as exc:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=f"enqueue failed: {exc}")
-    return CommandAck(ok=True, queued_id=cmd["id"], action=action)
+    # append_command already retries os.replace with backoff under a shared
+    # cross-process lock. This is the outer safety net: if the file is *still*
+    # contended after that (e.g. the Node /api/command route or an AV scanner
+    # held a handle past our budget), retry once more, then report it as a
+    # retryable 503 instead of a hard 500 so the client/agent can re-issue.
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            append_command(cmd, path=COMMANDS_PATH)
+            return CommandAck(ok=True, queued_id=cmd["id"], action=action)
+        except PermissionError as exc:  # transient Windows access-denied
+            last_exc = exc
+            time.sleep(0.03 * (attempt + 1))
+        except Exception as exc:  # pragma: no cover — genuine, non-retryable
+            raise HTTPException(status_code=500, detail=f"enqueue failed: {exc}")
+    raise HTTPException(
+        status_code=503,
+        detail=f"command queue busy, retry: {last_exc}",
+        headers={"Retry-After": "1"},
+    )
 
 
 # --------------------------------------------------------------------------- #

@@ -41,9 +41,10 @@ def main() -> int:
     print("PHASE 7 COMMAND TEST — Object-Pool dynamic spawn / remove")
     print("=" * 74)
 
-    # fresh queue file for the test
-    if os.path.exists(CMD_PATH):
-        os.remove(CMD_PATH)
+    # fresh queue file for the test (and its lock sidecar)
+    for _p in (CMD_PATH, CMD_PATH + ".lock"):
+        if os.path.exists(_p):
+            os.remove(_p)
 
     env = DroneMARLEnv({
         "num_recon": 2, "num_kami": 4, "pool_size": 10, "seed": 7,
@@ -112,8 +113,9 @@ def main() -> int:
     print(f"  removed {spawned_id}: dormant again = {not env.is_active(spawned_id)}")
     print(f"  REMOVE: {'PASS' if remove_ok else 'FAIL'}")
 
-    if os.path.exists(CMD_PATH):
-        os.remove(CMD_PATH)
+    for _p in (CMD_PATH, CMD_PATH + ".lock"):
+        if os.path.exists(_p):
+            os.remove(_p)
 
     ok = spawn_ok and remove_ok
     print("\n" + "=" * 74)

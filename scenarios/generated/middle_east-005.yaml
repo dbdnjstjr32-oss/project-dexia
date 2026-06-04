@@ -1,0 +1,61 @@
+scenario:
+  id: middle_east-005
+  theater: middle_east
+  mission:
+    tasking: 와디를 따라 침투하는 적 기술차량·보병 습격조를 거부하라. 민간지역 교전 금지.
+    intent: destroy
+    roe:
+    - no_civilian_area
+    victory:
+      hold_line:
+      - 2283
+      - 0
+      max_blue_loss: 3
+      time_limit_s: 720
+  blue:
+  - cls: recon_drone
+    n: 2
+    pos:
+    - -1564
+    - 100
+  - cls: kami_drone
+    n: 5
+    pos:
+    - -1564
+    - 10
+  - cls: switchblade
+    n: 2
+    pos:
+    - -1564
+    - -62
+  - cls: ugs_field
+    n: 2
+    pos:
+    - -1564
+    - -73
+  red:
+  - cls: technical_truck
+    n: 3
+    behavior: advance
+    route:
+    - - 3406
+      - 29
+    - - 1079
+      - 29
+  - cls: infantry_squad
+    n: 2
+    behavior: advance
+    route:
+    - - 3406
+      - -221
+    - - 1079
+      - -221
+  - cls: manpads_team
+    n: 2
+    behavior: static_ad
+    pos:
+    - 5699
+    - 1759
+  feeds:
+  - ugs
+  - uav_eo

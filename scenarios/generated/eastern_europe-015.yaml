@@ -1,0 +1,67 @@
+scenario:
+  id: eastern_europe-015
+  theater: eastern_europe
+  mission:
+    tasking: 동측에서 진격하는 적 기갑부대를 저지선까지 막아라. 아군 손실 최소, 부수피해 회피.
+    intent: destroy
+    roe: []
+    victory:
+      hold_line:
+      - 4759
+      - 0
+      max_blue_loss: 1
+      time_limit_s: 600
+  blue:
+  - cls: m777_howitzer
+    n: 1
+    pos:
+    - -1005
+    - -186
+  - cls: tb2_recon_uav
+    n: 1
+    pos:
+    - -1005
+    - 198
+  - cls: switchblade
+    n: 3
+    pos:
+    - -1005
+    - 1
+  - cls: ugs_field
+    n: 2
+    pos:
+    - -1005
+    - 87
+  red:
+  - cls: t72_tank
+    n: 8
+    behavior: advance
+    route:
+    - - 5571
+      - 205
+    - - 1703
+      - 205
+  - cls: bmp_apc
+    n: 4
+    behavior: advance
+    route:
+    - - 5571
+      - 19
+    - - 1703
+      - 19
+  - cls: sa11_sam
+    n: 1
+    behavior: static_ad
+    pos:
+    - 5517
+    - -1613
+  - cls: krasukha_ew
+    n: 1
+    behavior: periodic_jam
+    pos:
+    - 7496
+    - 2517
+  feeds:
+  - sigint
+  - ugs
+  - uav_eo

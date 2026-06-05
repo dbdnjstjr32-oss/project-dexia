@@ -81,8 +81,36 @@ def test_corroboration_sharpens_and_raises_confidence():
     t = fe.tracks[0]
     assert t.category == "air_defense"
     assert t.sources == ["sigint", "uav_eo"]
-    assert t.confidence == 0.82                    # 1 - (1-0.4)(1-0.7)
+    # 1 - (1 - r_eff[sigint,2 looks])(1 - r_eff[eo,1 look]) = 1 - (1-0.45)(1-0.7)
+    assert t.confidence == 0.835                   # dwell: sigint's 2nd look adds a little
     assert t.uncertainty_r <= 5.5                  # collapsed toward the EO fix
+
+
+def test_sustained_single_feed_isr_raises_confidence():
+    """Persistent ISR from one EO sensor must *confirm* a track — confidence climbs
+    from the single-look prior (0.70) toward the dwell ceiling and crosses the 0.8
+    strike threshold within a few looks. (Regression guard: a held single-sensor
+    track previously stayed pinned at 0.70 forever, so the kill chain stalled.)"""
+    world = WorldState([
+        Entity("t72", "t72_tank", "red", "armor", [1200, 0]),
+        Entity("tb2", "tb2_recon_uav", "blue", "isr", [0, 0]),
+    ], _CAT)
+    eo = PlatformSensorFeed("uav_eo", "eo_ir", 0.7)
+    fe, rng = FusionEngine(), _rng()
+
+    fe.update(eo.observe(world, 1, rng), 1)
+    first = fe.tracks[0].confidence
+    assert first == 0.7                              # first look == the prior, unchanged
+    assert fe.tracks[0].sources == ["uav_eo"]        # single sensor only
+
+    confs = [first]
+    for tk in range(2, 12):                          # the UAV keeps eyes on it
+        fe.update(eo.observe(world, tk, rng), tk)
+        confs.append(fe.tracks[0].confidence)
+
+    assert all(b >= a for a, b in zip(confs, confs[1:]))   # monotonic, never drops
+    assert confs[-1] > 0.8                            # confirmed enough to strike
+    assert confs[-1] <= 0.95                          # but never reaches certainty alone
 
 
 def test_track_coasts_when_unseen():

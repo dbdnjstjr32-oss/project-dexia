@@ -36,6 +36,25 @@ _SPECIFICITY = {"emitter": 0, "ew": 1, "apc": 1, "infantry": 1,
 _MIN_SIGMA = 1.0       # position-noise floor (m)
 _MIN_GATE = 40.0       # association gate floor (m)
 
+# Dwell model: sustained corroboration from the SAME feed is additional evidence,
+# so a feed's effective reliability climbs from its single-look prior toward a
+# ceiling as the look-count grows. This is what lets persistent ISR *confirm* a
+# track (raise confidence past a strike threshold) instead of pinning a single-
+# sensor track at its prior forever. Multi-feed fusion still dominates: a second
+# independent feed adds a whole new (1 - r) factor and gets there faster.
+#   r_eff(n) = r0 + (ceil - r0) * (1 - DWELL_RATE**(n-1)),  ceil = min(.95, r0+DWELL_GAIN)
+# n == 1 returns exactly r0, so first-look behaviour (and its tests) are unchanged.
+_DWELL_GAIN = 0.20     # how far above its prior a feed can climb on sustained dwell
+_DWELL_RATE = 0.75     # geometric approach to the ceiling (lower = faster)
+_DWELL_CEIL = 0.95     # absolute cap: no single sensor ever reaches certainty alone
+
+
+def _dwell_reliability(r0: float, hits: int) -> float:
+    """Effective reliability of one feed after ``hits`` corroborating looks."""
+    r0 = max(0.0, min(1.0, r0))
+    ceil = min(_DWELL_CEIL, r0 + _DWELL_GAIN)
+    return r0 + (ceil - r0) * (1.0 - _DWELL_RATE ** max(0, hits - 1))
+
 
 def _compatible(a: str, b: str) -> bool:
     return a == b or b in _COMPAT.get(a, {a}) or a in _COMPAT.get(b, {b})
@@ -53,6 +72,7 @@ class Track:
     def __init__(self, track_id: str, det) -> None:
         self.track_id = track_id
         self._obs: dict = {}
+        self._hits: dict = {}             # per-feed corroboration count (dwell evidence)
         self.first_tick = det.tick
         self.last_seen_tick = det.tick
         self.status = "active"            # active | coasting | stale
@@ -66,6 +86,7 @@ class Track:
     # ---- update ---------------------------------------------------------- #
     def add(self, det) -> None:
         self._obs[det.feed] = det
+        self._hits[det.feed] = self._hits.get(det.feed, 0) + 1
         self.last_seen_tick = det.tick
         self.status = "active"
         self._recompute()
@@ -92,10 +113,13 @@ class Track:
             py += w * o.position[1]
         self.position = [px / wsum, py / wsum]
         self.uncertainty_r = round(math.sqrt(1.0 / wsum), 2)
-        # confidence: independent-OR of contributing feeds' reliabilities
+        # confidence: independent-OR of each feed's *dwell-adjusted* reliability —
+        # sustained looks from one feed raise its term toward a ceiling, and an
+        # independent second feed multiplies in another (1 - r) factor.
         prod = 1.0
         for o in obs:
-            prod *= (1.0 - max(0.0, min(1.0, o.reliability)))
+            r_eff = _dwell_reliability(o.reliability, self._hits.get(o.feed, 1))
+            prod *= (1.0 - r_eff)
         self.confidence = round(1.0 - prod, 3)
 
     def coast(self, decay: float) -> None:

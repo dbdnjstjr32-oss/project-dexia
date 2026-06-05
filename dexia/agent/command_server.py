@@ -60,7 +60,7 @@ async def _stepping_loop():
         mm: MissionManager = session["manager"]
         if not mm.paused:
             await asyncio.to_thread(mm.run_cycle)
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(1.0 / mm.speed)
 
 
 async def _broadcast_loop():
@@ -70,7 +70,7 @@ async def _broadcast_loop():
         mm: MissionManager = session["manager"]
         state = mm.get_client_state()
         await manager.broadcast(json.dumps({"type": "STATE_UPDATE", "data": state}))
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.5 / mm.speed)
 
 
 async def simulation_loop():
@@ -154,9 +154,20 @@ async def websocket_endpoint(websocket: WebSocket):
             elif cmd_type == "RESUME" and session["manager"]:
                 session["manager"].paused = False
                 
+            elif cmd_type == "RESET":
+                session["running"] = False
+                if session["task"]:
+                    session["task"].cancel()
+                    session["task"] = None
+                session["manager"] = None
+                await websocket.send_text(json.dumps({"type": "RESET_ACK"}))
+
+            elif cmd_type == "SET_SPEED" and session["manager"]:
+                session["manager"].speed = float(payload.get("speed", 1.0))
+                
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)

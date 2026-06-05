@@ -15,7 +15,7 @@ export default function OperationsCenter() {
 
   useEffect(() => {
     // Connect to FastAPI WebSocket
-    ws.current = new WebSocket('ws://localhost:8000/ws/command');
+    ws.current = new WebSocket('ws://localhost:8001/ws/command');
 
     ws.current.onopen = () => {
       setConnected(true);
@@ -32,6 +32,8 @@ export default function OperationsCenter() {
           setBattlefields(msg.data);
         } else if (msg.type === 'INFO') {
           setInfo(msg.message);
+        } else if (msg.type === 'RESET_ACK') {
+          setGameState(null);
         }
       } catch (e) {
         console.error("WS parse error", e);

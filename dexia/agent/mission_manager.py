@@ -25,6 +25,7 @@ def _locked(fn):
 
 from dexia.fusion import EffectResolver, FusionEngine, WorldState, build_feeds
 from dexia.agent.assetmatch import match_assets
+from dexia.agent.text_normalize import normalize_obj
 from dexia.ontology.action_bus import ActionBus
 from dexia.ontology.registry import InMemoryRegistry
 from dexia.ontology.actions import ACTION_REGISTRY, TOOL_TO_ACTION
@@ -89,10 +90,15 @@ class MissionManager:
         # vs the event loop (broadcast / approvals). Held only for fast state
         # mutations — NEVER across the blocking LLM call — so broadcasts never
         # freeze while the AIP is reasoning (Phase F).
+        self.active_trajectories = []  # List of {"id": str, "path": list, "impact_tick": int, "action": str}
         self._lock = threading.RLock()
 
         # State machine
         self.paused = False
+        self.speed = 1.0
+
+        # Rally points: where each asset started, so "recall / RTB" can fly it home.
+        self._home: Dict[str, list] = {e.entity_id: list(e.position) for e in world.blue}
 
     # ------------------------------------------------------------------ #
     # OBSERVE
@@ -112,6 +118,9 @@ class MissionManager:
 
         # 3. Resolve delayed physics/effects (rounds landing, etc.) and surface
         #    them on the AIP feed — this is the BDA the commander sees.
+        # Prune expired trajectories
+        self.active_trajectories = [t for t in self.active_trajectories if t["impact_tick"] > self.current_tick]
+
         for ev in self.resolver.step(self.current_tick):
             self._log_effect(ev)
 
@@ -133,14 +142,17 @@ class MissionManager:
         if ev is None:
             return
         if ev.status == "impact":
-            kills = ", ".join(ev.killed) if ev.killed else "no targets in lethal radius"
-            self.aip_feed.append({
-                "type": "BDA",
-                "message": f"{ev.action} impact: {kills}. {ev.detail}",
-                "killed": ev.killed,
-                "tick": ev.tick,
-            })
+            hit = "명중" if ev.killed else "빗나감 (0 neutralized)"
+            msg = f"[BDA] {ev.asset_id} 타격 결과: {hit} ({ev.detail})"
+            self.aip_feed.append({"type": "BDA", "message": msg})
         elif ev.status == "launched":
+            if hasattr(ev, "trajectory") and ev.trajectory:
+                self.active_trajectories.append({
+                    "id": f"traj_{self.current_tick}_{ev.asset_id}",
+                    "path": ev.trajectory,
+                    "impact_tick": ev.impact_tick,
+                    "action": ev.action
+                })
             self.aip_feed.append({
                 "type": "EXECUTION",
                 "message": f"{ev.asset_id}: {ev.detail}",
@@ -215,8 +227,10 @@ class MissionManager:
             "  - \"target\" MUST be a 'track_id' from TRACKS (for fires/engage/jam), "
             "or omit/leave blank and rely on ISR to build a track first.\n"
             "  - Put human-readable reasoning in \"description\", NOT in \"action\".\n"
-            "  - If nothing is confirmed yet, return coas: [] and recommend ISR in the feed.\n\n"
-            "Return JSON ONLY (no markdown): {\"feed\": [{\"type\": \"ISR|ANALYSIS|RECOMMENDATION\", "
+            "  - If nothing is confirmed yet, return coas: [] and recommend ISR in the feed.\n"
+            "  - IMPORTANT: ALL messages in the \"feed\" list and all \"description\" strings MUST be written in Korean (한국어로 작성).\n"
+            "  - TACTICAL WARNING: M777 Artillery (request_fires) takes 40s to impact. Do NOT recommend artillery against moving targets (Armor/APC) unless track confidence is extremely high (>0.8). Prefer 'engage' (loiter strike) for moving targets.\n\n"
+            "Return JSON ONLY (no markdown): {\"feed\": [{\"type\": \"<CHOOSE ONE: ISR, ANALYSIS, RECOMMENDATION>\", "
             "\"message\": str}], \"coas\": [{\"action\": str, \"target\": str, \"asset\": str, "
             "\"description\": str, \"confidence\": float, \"expected_success\": float}]}"
         )
@@ -225,11 +239,11 @@ class MissionManager:
             {"role": "system", "content": "You are a tactical AIP staff officer. Output valid JSON only. "
                                           "Use only the canonical action names you are given."},
             {"role": "user", "content": prompt}
-        ], use_case="tactical")
+        ], use_case="tactical", temperature=0.7)
 
         if not res.get("ok"):
             with self._lock:
-                self.aip_feed.append({"type": "ERROR", "message": "AIP unavailable (LLM offline)"})
+                self.aip_feed.append({"type": "ERROR", "message": "AIP 연결 불가 (LLM 오프라인)"})
             return
 
         try:
@@ -244,11 +258,15 @@ class MissionManager:
                     content = content[3:]
                 if content.endswith("```"):
                     content = content[:-3]
-                data = json.loads(content)
+                data = json.loads(content, strict=False)
         except Exception as e:
             with self._lock:
-                self.aip_feed.append({"type": "ERROR", "message": f"LLM parsing failed: {e}"})
+                self.aip_feed.append({"type": "ERROR", "message": f"LLM 파싱 실패: {e}"})
             return
+
+        # Scrub any leaked Han ideographs back to Hangul before the text is shown
+        # or stored (the small model occasionally writes Sino-Korean in 漢字).
+        data = normalize_obj(data)
 
         # Apply results under the lock (fast): feed + validated COAs.
         with self._lock:
@@ -334,7 +352,8 @@ class MissionManager:
             if self.paused:
                 return
             new_tracks = self._observe()             # fast: world step + fuse
-            due = bool(new_tracks) or self.current_tick % 10 == 0
+            # Run LLM only at the very beginning (tick 1) or when a brand new track is discovered.
+            due = bool(new_tracks) or self.current_tick == 1
         # The LLM call (slow) runs OUTSIDE the lock so broadcasts/approvals don't
         # block on it. _orient_and_decide re-takes the lock only to apply results.
         if due:
@@ -346,7 +365,7 @@ class MissionManager:
     # Only lead a target whose estimated speed is clearly above the velocity-noise
     # floor; otherwise extrapolating a jittery fused position over a 40 s time-of-
     # flight throws the aimpoint far off a stationary unit (lead from noise).
-    LEAD_SPEED_FLOOR_MPS = 6.0
+    LEAD_SPEED_FLOOR_MPS = 2.0
 
     def _aimpoint_for(self, coa: COA):
         """Resolve a COA target track_id to a fused aimpoint, leading a genuine
@@ -380,24 +399,43 @@ class MissionManager:
                 payload["target"] = aim
                 payload["x"], payload["y"] = aim[0], aim[1]
 
-            res = self.bus.submit(coa.action, agent_id=coa.asset,
-                                  payload=payload, clearance="commander")
-            if res["status"] == "accepted" and res.get("command"):
-                ev = self.resolver.submit(res["command"], self.current_tick)
-                self._log_effect(ev)
-                coa.status = "executed"
-                if coa.action in ("request_fires", "engage") and coa.target:
-                    self._engaged[coa.target] = self.current_tick   # mark for BDA re-recon
-                self.aip_feed.append({
-                    "type": "EXECUTION",
-                    "message": f"Approved & executed {coa.id}: {coa.action} on {coa.target} "
-                               f"by {coa.asset}",
-                })
+                res = self.bus.submit(coa.action, agent_id=coa.asset,
+                                      payload=payload, clearance="commander")
+                if res["status"] == "accepted" and res.get("command"):
+                    ev = self.resolver.submit(res["command"], self.current_tick)
+                    self._log_effect(ev)
+                    coa.status = "executed"
+                    if coa.action in ("request_fires", "engage") and coa.target:
+                        self._engaged[coa.target] = self.current_tick   # mark for BDA re-recon
+                    self.aip_feed.append({
+                        "type": "EXECUTION",
+                        "message": f"{coa.id} 승인 및 실행: {coa.asset}가 {coa.target}에 대해 {coa.action} 수행",
+                    })
+                else:
+                    self.aip_feed.append({
+                        "type": "ERROR",
+                        "message": f"{coa.id} 실행 실패: {res.get('reason')}",
+                    })
+            elif coa.action == "task_isr":
+                # 표적이 없거나 시야에서 사라진 경우, 기본 광역 정찰(Sweep) 경로로 대체 수행
+                if self.command_recon(asset_ref=coa.asset):
+                    coa.status = "executed"
+                    self.aip_feed.append({
+                        "type": "EXECUTION",
+                        "message": f"{coa.id} 승인: 미확인 표적에 대한 광역 정찰(Lawnmower Sweep)로 대체 실행되었습니다.",
+                    })
+                else:
+                    self.aip_feed.append({
+                        "type": "ERROR",
+                        "message": f"{coa.id} 실행 실패: 정찰 가능한 ISR 자산이 없습니다.",
+                    })
+                continue
             else:
                 self.aip_feed.append({
                     "type": "ERROR",
-                    "message": f"Failed to execute {coa.id}: {res.get('reason')}",
+                    "message": f"{coa.id} 실행 실패: 타격 목표 좌표(x, y)를 찾을 수 없습니다 (표적이 시야에서 사라짐).",
                 })
+                continue
 
         # Ranked options (안1/2/3) are mutually-exclusive alternatives to ONE
         # decision — approving one retires the rest. Non-ranked COAs are removed
@@ -462,7 +500,22 @@ class MissionManager:
         if eff is None:
             return 0.0
         lethal = eff.lethal_r + (120.0 if opt.cmd == "engage" else 0.0)  # terminal seeker capture
-        cover = lethal / (lethal + max(track.uncertainty_r, 1.0))
+
+        # Calculate miss distance penalty based on velocity, TOF, and tracking confidence
+        future_uncertainty = track.uncertainty_r
+        if eff.tof_s > 0 and hasattr(track, "velocity"):
+            v = track.velocity
+            speed = (v[0] ** 2 + v[1] ** 2) ** 0.5
+            if 0.5 < speed < self.LEAD_SPEED_FLOOR_MPS:
+                # System will NOT lead the target, meaning we aim at the current position.
+                # The target will travel miss_distance meters before the round hits.
+                future_uncertainty += (speed * eff.tof_s)
+            else:
+                # System WILL lead the target, but velocity has error proportional to (1 - confidence)
+                velocity_error = (1.0 - float(track.confidence)) * speed
+                future_uncertainty += (velocity_error * eff.tof_s)
+
+        cover = lethal / (lethal + max(future_uncertainty, 1.0))
         return round(min(0.98, float(track.confidence) * (0.5 + 0.5 * cover)), 3)
 
     def _est_loss(self, track, opt, tracks) -> float:
@@ -483,7 +536,7 @@ class MissionManager:
         tracks = [t for t in self.fusion.active_tracks() if t.confidence >= min_conf]
         if not tracks:
             self.aip_feed.append({"type": "ANALYSIS",
-                                  "message": "No confirmed targets yet — recon required before a strike plan."})
+                                  "message": "아직 확인된 표적이 없습니다 — 타격 계획 수립 전 정찰이 필요합니다."})
             return []
 
         matrix = match_assets(tracks, list(self.world.blue), self.catalog)
@@ -507,7 +560,7 @@ class MissionManager:
         ranked = sorted(best.values(), key=lambda c: c[0], reverse=True)[:max_options]
         if not ranked:
             self.aip_feed.append({"type": "ANALYSIS",
-                                  "message": "Targets confirmed but no feasible strike asset in range."})
+                                  "message": "표적은 확인되었으나 사거리 내에 가용한 타격 자산이 없습니다."})
             return []
 
         self.approval_queue.clear()
@@ -588,13 +641,12 @@ class MissionManager:
         the governed funnel. Returns the tasked asset id (or None)."""
         asset = self._resolve_recon_asset(asset_ref)
         if asset is None:
-            self.aip_feed.append({"type": "ERROR", "message": "No ISR asset available for recon."})
+            self.aip_feed.append({"type": "ERROR", "message": "정찰 가능한 ISR 자산이 없습니다."})
             return None
         wps, orbit = self.plan_recon_route(area)
         self.aip_feed.append({
             "type": "ISR",
-            "message": f"AIP plan: {asset.entity_id} ISR sweep — {len(wps)} waypoints over the "
-                       f"unconfirmed area, then orbit @ {int(orbit['alt'])} m AGL.",
+            "message": f"AIP 계획: {asset.entity_id} 정찰 비행 — 미확인 지역의 {len(wps)}개 웨이포인트 통과 후 {int(orbit['alt'])}m 상공 궤도 비행.",
         })
         payload = {"asset_id": asset.entity_id, "route": wps, "orbit": orbit}
         res = self.bus.submit("recon_route", agent_id=asset.entity_id,
@@ -603,7 +655,7 @@ class MissionManager:
             self._log_effect(self.resolver.submit(res["command"], self.current_tick))
         else:
             self.aip_feed.append({"type": "ERROR",
-                                  "message": f"Recon tasking rejected: {res.get('reason')}"})
+                                  "message": f"정찰 지시 거부됨: {res.get('reason')}"})
         return asset.entity_id
 
     @_locked
@@ -632,16 +684,131 @@ class MissionManager:
     def reject_coa(self, coa_id: str):
         """Human rejects a COA without executing it."""
         self.approval_queue = [c for c in self.approval_queue if c.id != coa_id]
-        self.aip_feed.append({"type": "COMMANDER", "message": f"Rejected {coa_id}"})
+        self.aip_feed.append({"type": "COMMANDER", "message": f"{coa_id} 거부됨"})
         if not self.approval_queue:
             self.paused = False
 
+    # ------------------------------------------------------------------ #
+    # COMMANDER CHAT — intent routing (the AIP must actually *listen*)
+    # ------------------------------------------------------------------ #
+    # Each intent is a set of Korean/English trigger words. A query about assets is
+    # checked before recon so "정찰 자산 몇 개" is answered, not flown.
+    _INTENT_WORDS = {
+        "status": ["몇", "얼마", "가용", "현황", "상태", "보유", "남아", "있나", "있냐", "있어",
+                   "자산", "전력", "asset", "available", "how many", "status", "count"],
+        "recall": ["회수", "복귀", "귀환", "돌아", "복귀시", "철수", "rtb", "recall", "return", "come back"],
+        "bda":    ["피해", "전과", "평가", "bda", "battle damage"],
+        "strike": ["타격", "공격", "사격", "포격", "교전", "방안", "옵션", "때려", "쳐",
+                   "strike", "attack", "fire", "engage", "option"],
+        "recon":  ["정찰", "수색", "스캔", "탐지", "살펴", "recon", "scan", "isr", "sweep", "search"],
+    }
+
+    def _classify_intent(self, text: str) -> Optional[str]:
+        t = (text or "").lower()
+        for intent in ("status", "recall", "bda", "strike", "recon"):  # priority order
+            if any(w in t for w in self._INTENT_WORDS[intent]):
+                return intent
+        return None
+
+    @_locked
+    def _answer_asset_status(self) -> None:
+        """Answer 'what/how many assets do I have?' from the real world state."""
+        alive = [e for e in self.world.blue if e.alive]
+        lines = [f"가용 자산 현황 — 총 {len(alive)}기 생존:"]
+        for e in alive:
+            spec = self.catalog.get(e.cls)
+            role = spec.role if spec else "?"
+            caps = self._asset_capabilities(e)
+            ammo = "무한" if e.ammo == float("inf") else int(e.ammo)
+            lines.append(f"  • {e.entity_id} ({role}) — 탄약 {ammo}, 가능: {', '.join(caps) or '없음'}")
+        self.aip_feed.append({"type": "ANALYSIS", "message": "\n".join(lines)})
+
+    @_locked
+    def _recall_assets(self, asset_ref: str = None) -> list:
+        """Recall / RTB: fly mobile recon assets back to their start (rally) point."""
+        if asset_ref:
+            cands = [self.world.get(asset_ref)]
+        else:                                   # default: every mobile sensor (the drones)
+            cands = [e for e in self.world.blue if e.alive and self._is_mobile_sensor(e)]
+        recalled = []
+        for e in cands:
+            if e is None or not e.alive:
+                continue
+            home = self._home.get(e.entity_id)
+            if home is None:
+                continue
+            mm = getattr(e, "_motion", None)
+            if mm is not None:                  # 3D physics path: re-aim the engine home
+                mm.retarget([float(home[0]), float(home[1])])
+            else:                               # flat/legacy path: scripted return
+                e.route = [[float(home[0]), float(home[1])]]
+                e._leg = 0
+                e.behavior = "advance"
+                e.speed_mps = 120.0
+            recalled.append(e.entity_id)
+        if recalled:
+            self.aip_feed.append({"type": "EXECUTION",
+                "message": f"기지 복귀(RTB) 명령 수행: {', '.join(recalled)} → 출발 지점으로 회수합니다."})
+        else:
+            self.aip_feed.append({"type": "ERROR", "message": "회수할 수 있는 기동 정찰 자산이 없습니다."})
+        return recalled
+
+    def _is_mobile_sensor(self, e) -> bool:
+        spec = self.catalog.get(e.cls)
+        if spec is None:
+            return False
+        return bool(spec.sensors) and (spec.domain == "air" or spec.role == "isr") \
+            and not spec.constraints.get("static")
+
     def modify_plan(self, text: str):
-        """Human provides natural language modification. Trigger replan."""
-        self.approval_queue.clear()  # discard old COAs
-        self.aip_feed.append({"type": "COMMANDER", "message": text})
-        self.paused = False
+        """Route a commander chat message by intent: answer a question, obey a direct
+        order (recall / recon / strike / BDA), or — only when it's an actual planning
+        request — clear the queue and replan. Previously every message was forced
+        through the COA planner, so the AIP 'only talked' and ignored commands."""
+        with self._lock:
+            self.aip_feed.append({"type": "COMMANDER", "message": text})
+
+        intent = self._classify_intent(text)
+        if intent == "status":
+            self._answer_asset_status();  return
+        if intent == "recall":
+            self._recall_assets();        return
+        if intent == "bda":
+            self.assess_bda();            return
+        if intent == "recon":
+            self.command_recon();         return
+        if intent == "strike":
+            self.generate_coa_options();  return
+
+        # No recognised command → treat as a planning instruction and replan.
+        with self._lock:
+            self.approval_queue.clear()
+            self.paused = False
         self._orient_and_decide(user_modification=text)
+
+    def _asset_profile(self, e) -> Dict:
+        """Per-asset capability envelope for the HUD: the longest detecting sensor
+        ring and the primary weapon ring, so the client can draw real detection /
+        engagement geometry (not hard-coded guesses)."""
+        prof = {"id": e.entity_id, "cls": e.cls, "pos": e.position,
+                "sensor": None, "weapon": None}
+        spec = self.catalog.get(e.cls)
+        if spec is None:
+            return prof
+        prof["role"] = spec.role
+        prof["domain"] = spec.domain
+        # detection ring = the asset's farthest-reaching sensor
+        best_sensor = max(spec.sensors, key=lambda s: s.range_m, default=None)
+        if best_sensor is not None and best_sensor.range_m > 0:
+            prof["sensor"] = {"type": best_sensor.type, "range_m": best_sensor.range_m,
+                              "fov_deg": best_sensor.fov_deg}
+        # weapon ring = first strike/fire effect (loiter munition, artillery, gun)
+        weap = next((spec.effect(t) for t in ("loiter_strike", "indirect_fire", "direct_fire")
+                     if spec.effect(t) is not None), None)
+        if weap is not None and weap.range_m > 0:
+            prof["weapon"] = {"type": weap.type, "range_m": weap.range_m,
+                              "min_range_m": weap.min_range_m, "lethal_r": weap.lethal_r}
+        return prof
 
     @_locked
     def get_client_state(self):
@@ -649,14 +816,16 @@ class MissionManager:
         return {
             "tick": self.current_tick,
             "blue": [e.position for e in self.world.blue if e.alive],
-            "blue_details": [{"id": e.entity_id, "cls": e.cls, "pos": e.position}
+            "blue_details": [self._asset_profile(e)
                              for e in self.world.blue if e.alive],
             "tracks": self.fusion.snapshot(),  # ONLY fused tracks. True red is HIDDEN.
             "feed": self.aip_feed[-10:],       # last 10 messages
             "approval_queue": [c.__dict__ for c in self.approval_queue],
             "paused": self.paused,
+            "speed": self.speed,
             # Phase D: the enemy band the client blurs until recon reveals tracks,
             # plus the activated battlefield's identity (region/location/climate).
             "enemy_area": getattr(self.world, "enemy_area", None),
+            "trajectories": self.active_trajectories,
             "battlefield": getattr(self.world, "battlefield", None),
         }

@@ -92,7 +92,7 @@ def test_request_fires_out_of_range_rejected():
     res = EffectResolver(world)
     # 2 km < min_range 4 km -> rejected, no ammo spent
     ev = res.submit(to_command("request_fires", {"asset_id": "m777_0", "target": [2000, 0]}), 1)
-    assert ev.status == "rejected" and "out of range" in ev.detail
+    assert ev.status == "rejected" and "사거리 밖" in ev.detail
     assert world.get("m777_0").ammo == 5
 
 

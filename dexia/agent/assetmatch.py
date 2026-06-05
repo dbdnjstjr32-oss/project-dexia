@@ -51,8 +51,8 @@ def _options_for(track, asset, spec, confirm_threshold: float) -> list:
         aim = track.predicted(fires.tof_s)         # lead the moving column
         d = _dist(asset.position, aim)
         feasible = fires.in_range(d) and asset.ammo > 0
-        reason = ("in range, ammo {}".format(int(asset.ammo)) if feasible
-                  else ("winchester" if asset.ammo <= 0 else f"range {int(d)}m"))
+        reason = ("사거리 내, 잔탄 {}".format(int(asset.ammo)) if feasible
+                  else ("탄약 소진" if asset.ammo <= 0 else f"거리 {int(d)}m"))
         opts.append(Option(track.track_id, asset.entity_id, "request_fires",
                            feasible, _score(track, d, fires.range_m), reason, aim))
 
@@ -63,7 +63,7 @@ def _options_for(track, asset, spec, confirm_threshold: float) -> list:
         feasible = d <= strike.range_m and asset.ammo > 0
         opts.append(Option(track.track_id, asset.entity_id, "engage",
                            feasible, _score(track, d, strike.range_m),
-                           "reachable" if feasible else f"range {int(d)}m", aim))
+                           "도달 가능" if feasible else f"거리 {int(d)}m", aim))
 
     jam = spec.effect("jam")
     if jam and track.category in EMITTERISH:
@@ -71,7 +71,7 @@ def _options_for(track, asset, spec, confirm_threshold: float) -> list:
         feasible = d <= jam.range_m
         opts.append(Option(track.track_id, asset.entity_id, "jam",
                            feasible, _score(track, d, jam.range_m),
-                           "in jam range" if feasible else f"range {int(d)}m",
+                           "재밍 사거리 내" if feasible else f"거리 {int(d)}m",
                            list(track.position)))
 
     # ISR: a repositionable sensor asset can be tasked to confirm a vague track
@@ -79,7 +79,7 @@ def _options_for(track, asset, spec, confirm_threshold: float) -> list:
             track.confidence < confirm_threshold:
         opts.append(Option(track.track_id, asset.entity_id, "task_isr",
                            True, round(0.4 + (confirm_threshold - track.confidence), 3),
-                           f"confirm conf {track.confidence}", list(track.position)))
+                           f"신뢰도 {track.confidence} 확인 필요", list(track.position)))
     return opts
 
 

@@ -32,7 +32,14 @@ export default async function handler(req, res) {
   };
 
   try {
-    client = createClient({ url: REDIS_URL });
+    // Fail FAST when Redis is absent (e.g. streamer running with --no-redis):
+    // no reconnect retries + short connect timeout, so connect() rejects in ~1s
+    // and we emit `fatal` -> the client immediately falls back to polling
+    // /api/telemetry (instead of hanging "connected" with no data = LINK DOWN).
+    client = createClient({
+      url: REDIS_URL,
+      socket: { reconnectStrategy: false, connectTimeout: 1000 },
+    });
     client.on('error', () => {}); // swallow; handled below
     await client.connect();
 

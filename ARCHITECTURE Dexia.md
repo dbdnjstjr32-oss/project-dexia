@@ -55,9 +55,13 @@
 
 ```
 Project Dexia/
-├── ARCHITECTURE.md            ← (이 문서)
+├── ARCHITECTURE Dexia.md      ← (이 문서)
 ├── README.md                  사용법 + venv 설정
+├── dexia.config.yaml          선언적 통합 설정 (런타임 SOT)
+├── docker-compose.yml         5개 마이크로서비스 선언적 오케스트레이션
+├── drone_profiles.json        GCS 및 API용 드론 성능 프로필 설정
 ├── requirements.txt
+├── requirements-runtime.txt
 │
 ├── dexia/                     ── 코어 파이썬 패키지 (인터프리터 무관)
 │   ├── physics/
@@ -77,28 +81,69 @@ Project Dexia/
 │   ├── viz/
 │   │   └── plotter.py         Plotly 멀티패널 에피소드 대시보드
 │   ├── sitl_bridge.py         RL action[-1,1] ↔ PWM[1000,2000], MAVLink/UDP 목 (Phase 4)
-│   └── integrations/
-│       └── webhook.py         아웃바운드 내부 웹훅 클라이언트 (논블로킹, Sender)
+│   ├── integrations/
+│   │   └── webhook.py         아웃바운드 내부 웹훅 클라이언트 (논블로킹, Sender)
+│   ├── ontology/              ── 온톨로지(Foundry OMS) 시맨틱 매핑
+│   │   ├── schema.py          DroneObject, ThreatObject, CommsLink 등 타입 설계
+│   │   ├── registry.py        InMemoryRegistry (스레드세이프 인메모리 온톨로지 저장소)
+│   │   ├── serializer.py      telemetry 레코드 ↔ 온톨로지 타입 객체 변환 및 저장
+│   │   ├── action_bus.py      ActionBus (MAC 권한/상태 검증 + 감사 로그)
+│   │   └── store.py           LineageStore (SQLite 백엔드 온톨로지 히스토리)
+│   ├── api/                   ── FastAPI 제어 평면 및 LLM 게이트웨이
+│   │   ├── sim_api.py         OSS REST API 엔드포인트 (/ontology/*, /api/sim/*)
+│   │   ├── llm_gateway.py     k-LLM Gateway (UseCase 기반 LLM 라우팅 + llm_audit 로깅)
+│   │   └── auth.py            X-Dexia-Key 헤더 기반 principal/clearance 인증
+│   ├── ai/                    ── OAG 및 LLM 전술 참모 에이전트
+│   │   ├── oag.py             Ontology-Aware Prompt Generator (컨텍스트 변환기)
+│   │   ├── blocks.py          결정론적 로직 블록 (CommsRisk, RouteOptim) 및 LLM 인지 블록
+│   │   ├── pipeline.py        OAG + Logic Block 오케스트레이션 파이프라인 (COA 생성)
+│   │   └── tactical_agent.py  AAR 사후 보고서 및 전술 브리핑 생성 에이전트
+│   ├── aip/                   ── AIP 전술 도메인 데이터 및 로직 블록 레시피
+│   │   ├── logic_blocks.py    COA 분석용 Palantir AIP 스타일 로직 블록
+│   │   ├── recipes.json       지휘 참모 전술 추천용 처방전/대응책 템플릿
+│   │   ├── pending_proposals.json 제안된 작전 계획 임시 저장소
+│   │   └── episodic_memory.jsonl 에피소드 단위 전술적 메모리
+│   ├── runtime/               ── 선언적 실행 관리 및 헬스 모니터링
+│   │   ├── config.py          DexiaConfig 데이터 모델 및 환경 변수 병합 로직
+│   │   ├── health.py          HealthMonitor (telemetry.json stall 감지 + liveness 롤업)
+│   │   └── evals_worker.py    주기적으로 EpisodeEvalSuite를 구동하여 결과를 갱신하는 백그라운드 워커
+│   └── evals/                 ── 정량적 임계값 평가 메트릭 엔진
+│       ├── metrics.py         5+1개 핵심 지표 (생존율, 격추효율, LLM 정확도 등) 정의
+│       ├── suite.py           EpisodeEvalSuite (에피소드 평가 및 evals_results.jsonl 추가)
+│       └── audit.py           3대 감사 로그 파서 및 통합 가관측성(Observability) 요약
 │
 ├── train_phase2.py            6-DOF PPO 커리큘럼 학습
 ├── train_phase2_5.py          멀티에이전트 킬체인 (2 정책)
 ├── train_phase3.py            6기 스웜 학습 (전 스레드)
 ├── eval_phase3.py             체크포인트 롤아웃 → phase3_results.html
+├── eval_phase9.py             AIP 평가 스위트 구동 CLI (evals_results.jsonl 기록)
+├── scenario_killchain.py      결정론적 킬체인 시나리오 롤아웃 검증 스크립트
 ├── test_phase1.py             3-DOF 시뮬 + Plotly → phase1_results.html
 ├── test_phase4.py             AA 위협 + SITL 브리지 검증
 ├── test_phase5_backend.py     텔레메트리 스트리머 50틱 검증
+├── test_phase9_evals.py       EpisodeEvalSuite 및 가관측성 요약 단위 테스트
+├── test_phase10_runtime.py    선언적 환경 설정 및 HealthMonitor stall 감지 검증
 │
-├── telemetry_stream.py        DroneMARLEnv → telemetry.json (시나리오 스트리머)
+├── telemetry_stream.py        DroneMARLEnv → telemetry.json (C2/시나리오 스트리머)
 ├── package_project.py         배포용 ZIP 패키징
 ├── checkpoints/               RLlib 체크포인트 (phase2 / phase2_5 / phase3)
+├── evals_results.jsonl        에피소드 단위 정량 평가 레코드 로그 (GCS Hud 연동)
 │
 └── dexia-hud/                 ── Next.js Ground Control Station (GCS)
-    ├── pages/index.js         대시보드: 지도 + 좌/우 패널
-    ├── pages/api/telemetry.js telemetry.json 서빙 API
-    ├── components/TacticalMap.js  MapLibre GL (위성/하이브리드/전술 전환, 명령형 마커)
+    ├── pages/index.js         대시보드: 지도 + 좌/우 패널 + Evals/Garage 팝업
+    ├── pages/api/stream.js    Redis Pub/Sub을 사용한 SSE 실시간 텔레메트리 서빙 API
+    ├── pages/api/telemetry.js telemetry.json 서빙 API (폴링 fallback용)
+    ├── pages/api/proposals.js AIP 제안된 작전 계획(COA) 조회/승인 API
+    ├── pages/api/command.js   C2 명령 큐(/api/command) 전송 API
+    ├── pages/api/evals.js     정량 평가 이력(evals_results.jsonl) 조회 API
+    ├── components/TacticalMap.js  MapLibre GL (전술 심볼로지, 위협반경, 동적 궤적)
+    ├── components/EvalsPanel.js   정량적 6개 핵심 지표 성적표 및 감사 이력 시각화 패널
+    ├── components/DroneGarage.js  드론의 속도/중량/역할 성능 프로필(drone_profiles.json) 편집기
+    ├── components/AIStaffCard.js  AIP AI 참모(COA 제안 및 human-in-the-loop 결재) 카드
+    ├── components/HitlApproval.js Operator 및 Commander 간 다단계 승인 흐름 관리 카드
     ├── lib/geo.js             로컬 미터 ↔ WGS84 lon/lat 투영
-    ├── lib/useTelemetry.js    폴링 훅 (렌더와 분리)
-    └── lib/mockRag.js         AI 참모(모의 LLM RAG) 권고 규칙
+    ├── lib/useTelemetry.js    SSE 우선 적용 및 폴링 자동 폴백(Dual-path) 훅
+    └── lib/mockRag.js         RAG 대체 전 사용되었던 모의 LLM RAG 규칙
 ```
 
 ---
@@ -218,8 +263,16 @@ action[-1,1]  ──action_to_pwm──►  PWM[1000,2000] µs   (−1→1000, 0
 
 ### 텔레메트리 스트림 (실시간)
 - `telemetry_stream.py` — `DroneMARLEnv`(AA+바람) 루프 → `telemetry.json` 매 틱 **원자적 기록**(임시파일 replace), Redis 가용 시 발행 / 미가용 시 JSON 폴백.
-- 시나리오: 정찰기 상승→방송, 자폭기 진입→AA 격추 (결정론적 데모).
-- 레코드: 에이전트 6-DOF/속도/SNR/손실, AA 상태, 이벤트(broadcast/kill), 네트워크 생존율, 돌풍.
+- **실행 시나리오 모드 (`DEXIA_SCENARIO`)**:
+  - `scripted`: 고정된 결정론적 시나리오 (정찰기 상승 → 방송 → 자폭기 진입 → AA 격추).
+  - `interactive` (기본값): 빈 전장상태에서 시작하여 GCS C2 인터페이스를 통해 실시간으로 드론을 추가/제거 및 배치할 수 있는 모드.
+- **C2 명령 연동 (`commands.json`)**: 루프가 시작될 때 `drain_commands()`를 통해 GCS 등 외부 제어기에서 주입한 실시간 명령을 non-blocking 방식으로 수신하여 물리 환경(`DroneMARLEnv`)에 반영.
+- **드론 프로필 및 역할 동적 매핑 (`drone_profiles.json`)**: 배치된 드론의 `profile_name` 및 메타데이터를 파싱하여 장비 유형, 역할(`Recon {idx}` / `Kamikaze {idx}`) 및 종류(`recon` / `kami`)를 실시간으로 결정하고 텔레메트리에 노출.
+- **킬체인 시뮬레이션 및 Kinematic Override**:
+  - 시스템이 `ARMED` 상태로 전환되면 강건한 데모 주행을 위해 물리 모터 제어 대신 kinematic 좌표 덮어쓰기(`dynamic_scenario_positions`)를 실행.
+  - 정찰기는 관측 지점(`observation_point`)으로 이동하여 좌표 획득 후 감지 사실을 브로드캐스트(`broadcast = True`) 전송.
+  - 자폭기는 브로드캐스트 전까지 대기 영역(`loiter_center`)을 선회 비행하고, 전송을 받은 직후 표적 좌표(`target`)로 급강하/돌격하도록 궤적을 제어.
+- **레코드 구성**: 에이전트별 ID/역할/위치/속도/오일러각/고도/속력/SNR/통신상태/격추사유/도입장비, AA 포대 상태, 킬체인 이벤트(broadcast/kill), 네트워크 생존율, 돌풍 등 포함.
 
 ---
 
@@ -340,8 +393,8 @@ MAC 예: `_lost` 드론 move/engage 거부, kami는 broadcast 전 engage 불가(
 | 7 (AIP) | OSS API + k-LLM | `/ontology/*` + Gateway(라우팅·감사) | ✅ |
 | 8 (AIP) | OAG + Logic 블록 | OAG 컨텍스트 + 블록 체인, mockRag 제거 | ✅ |
 | A/HITL | 이벤트 버스 + 결재 | Redis/SSE + FastAPI 제어 + 승인 카드 | ✅ |
-| 9 | Evals + 관찰성 | EpisodeEvalSuite + Evals 패널 | ⬜ |
-| 10 | DexiaRuntime | docker-compose + dexia.config.yaml + 에어갭 | ⬜ |
+| 9 | Evals + 관찰성 | EpisodeEvalSuite + Evals 패널 | ✅ |
+| 10 | DexiaRuntime | docker-compose + dexia.config.yaml + 에어갭 | ✅ |
 
 ---
 
@@ -364,7 +417,8 @@ cd dexia-hud; npm install; npm run dev                            # 3) HUD → l
 ```
 
 > 검증 테스트: `test_aip_bc.py`(FastAPI+에이전트) · `test_ontology.py`(Phase 6) ·
-> `test_phase7_oss.py`(OSS+게이트웨이) · `test_phase8_oag.py`(OAG+Logic 블록).
+> `test_phase7_oss.py`(OSS+게이트웨이) · `test_phase8_oag.py`(OAG+Logic 블록) ·
+> `test_phase9_evals.py`(Phase 9 평가) · `test_phase10_runtime.py`(Phase 10 런타임).
 
 ---
 

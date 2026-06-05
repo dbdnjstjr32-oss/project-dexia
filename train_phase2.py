@@ -31,8 +31,8 @@ from dexia.envs.drone_env_6dof import (
 
 ENV_NAME = "dexia_flight_school"
 NUM_ENV_RUNNERS = 16          # leverage local hardware for fast rollouts
-TRAIN_ITERS = 10
-ADVANCE_RETURN_THRESHOLD = 350.0   # advance HOVER -> WAYPOINT above this return
+TRAIN_ITERS = 40
+ADVANCE_RETURN_THRESHOLD = 9999.0   # Keep in HOVER stage to train stable hover purely
 
 
 def env_creator(env_config):
@@ -92,7 +92,12 @@ def main() -> int:
     register_env(ENV_NAME, env_creator)
 
     print("\n[1/4] Initializing Ray ...")
-    ray.init(ignore_reinit_error=True, include_dashboard=False, log_to_driver=False)
+    ray.init(
+        _node_ip_address="127.0.0.1",
+        ignore_reinit_error=True,
+        include_dashboard=False,
+        log_to_driver=False,
+    )
     res = ray.cluster_resources()
     print(f"      Ray {ray.__version__} | CPUs={res.get('CPU')} | "
           f"num_env_runners={NUM_ENV_RUNNERS}")
@@ -100,7 +105,11 @@ def main() -> int:
     print("\n[2/4] Building PPO config (new API stack) ...")
     config = (
         PPOConfig()
-        .environment(ENV_NAME, env_config={"curriculum_stage": STAGE_HOVER})
+        .environment(ENV_NAME, env_config={
+            "curriculum_stage": STAGE_HOVER,
+            "goal_radius": 0.4,
+            "spawn_height": 1.5,
+        })
         .framework("torch")
         .env_runners(
             num_env_runners=NUM_ENV_RUNNERS,

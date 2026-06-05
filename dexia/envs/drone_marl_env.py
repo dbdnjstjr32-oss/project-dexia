@@ -313,6 +313,17 @@ class DroneMARLEnv(MultiAgentEnv):
         dist = float(np.linalg.norm(st.position - self.target))
         return dist <= self.detection_radius and st.position[2] >= self.los_min_altitude
 
+    def _scout_ids(self) -> list[str]:
+        """Agents that can trigger the detection broadcast: the declared recons
+        PLUS any active deployed drone the commander tagged with the 'recon' role
+        (interactive C2 has no pre-declared recon_ids)."""
+        ids = [a for a in self.recon_ids if self._active.get(a)]
+        for a in self.deployable_ids:
+            if self._active.get(a) and \
+               str(self._spawn_meta.get(a, {}).get("role", "")).lower() == "recon":
+                ids.append(a)
+        return ids
+
     # ================================================================== #
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         if seed is not None:
@@ -487,10 +498,12 @@ class DroneMARLEnv(MultiAgentEnv):
             comms[aid] = self.channels[aid].step(dist_base)
 
         # --- 2) team-level events -------------------------------------- #
-        # Detection / broadcast (any recon).
+        # Detection / broadcast (any scout). In interactive C2 mode there are no
+        # pre-declared recon_ids — the scout is whichever DEPLOYED drone was given
+        # the 'recon' role, so the broadcast must consider those too.
         detection_event = 0.0
         if not self._broadcast:
-            if any(self._is_detection(states[aid]) for aid in self.recon_ids):
+            if any(self._is_detection(states[aid]) for aid in self._scout_ids() if aid in states):
                 self._broadcast = True
                 detection_event = 1.0
 
@@ -762,9 +775,11 @@ class DroneMARLEnv(MultiAgentEnv):
             x = float(cmd.get("x", 0.0))
             y = float(cmd.get("y", 0.0))
             z = float(cmd.get("z", 0.3))   # staged low so ACTIVATE shows takeoff
+            role = str(cmd.get("role", "kami")).lower()
             aid = self.activate_agent(
                 [x, y, z], profile=cmd.get("profile"),
                 meta={"lon": cmd.get("lon"), "lat": cmd.get("lat"),
+                      "role": "recon" if role == "recon" else "kami",
                       "profile_name": (cmd.get("profile") or {}).get("name")},
             )
             return {"ok": aid is not None, "action": "spawn", "agent_id": aid,

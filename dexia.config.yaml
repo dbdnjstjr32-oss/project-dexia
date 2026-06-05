@@ -19,8 +19,9 @@ sim:
 
 llm:
   provider: ollama             # ollama (local) | anthropic | openai
-  tactical_model: "llama3.1:8b-instruct-q4_K_M"
-  summary_model: "qwen2.5:7b"
+  tactical_model: "qwen2.5:7b"            # live COA (VRAM-resident; see llm_gateway.ROUTING)
+  summary_model: "qwen2.5:7b"             # live Korean report (same resident model)
+  doctrine_model: "gpt-oss:20b"           # async AAR self-correction (RAM-offloaded)
   host: null                   # ollama host; null => default 127.0.0.1:11434
 
 evals:
@@ -46,3 +47,12 @@ health:
 services:
   api_port: 8000
   hud_port: 3000
+
+auth:
+  # AIP write-funnel access control (scaled). An API key (X-Dexia-Key header)
+  # maps to a principal + clearance; the control endpoints declare a required
+  # clearance and the ActionBus enforces it, stamping WHO into the lineage trail.
+  # clearance lattice: operator < commander. Override these keys for any real use.
+  principals:
+    dexia-operator:  { name: operator-1, clearance: operator }
+    dexia-commander: { name: commander,  clearance: commander }

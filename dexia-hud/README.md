@@ -82,3 +82,66 @@ The sim runs in a local meters frame (~15 m arena). `lib/geo.js` projects local
 `WORLD_SCALE` display-inflation factor so the small arena is legible at city
 zoom. **For the production Tandem Tiltrotor VTOL GCS:** set `WORLD_SCALE = 1` and
 point `GEO_ANCHOR` at the live launch fix — nothing else changes.
+
+---
+
+## Wargame HUD (Build #8) — AI 추론 관측 레이어
+
+`http://localhost:3000/wargame` 에 마운트된 전술 워게임 재생 플레이어.
+AIP 시뮬 코어(Builds 1–6)가 생성한 JSONL 파일을 읽어 AI의 *왜 그 결정을 했는지*를 시각화한다.
+
+### 구조
+
+```
+Python 시뮬 코어 (수정 불가)
+  └─ MissionRunner.run()   → reasoning_trace.jsonl  (1행 = 1결정 사이클)
+dexia/agent/loop_cli.py (Build #8 추가)
+  └─ SnapshotRunner._emit() → world_snapshot.jsonl  (1행 = 1사이클, LOS 포함)
+
+Next.js API 라우트 (pages/api/wargame/)
+  ├─ GET  /scenarios  → scenarios/ 디렉토리 스캔
+  ├─ GET  /trace      → reasoning_trace.jsonl 파싱
+  ├─ GET  /snapshot   → world_snapshot.jsonl 파싱
+  ├─ GET  /campaign   → scenario_evals.jsonl 파싱
+  └─ POST /run        → loop_cli.py 스폰 → 완료 후 trace+snapshot 반환
+
+React 컴포넌트 (components/wargame/)
+  ├─ WargameMap        — MapLibre GL (scale=1, zoom≈12.5)
+  ├─ TrackLayer        — 융합 적 유닛 마커 + 불확도 링
+  ├─ LosOverlay        — LOS 사시선 (초록=가시/빨간점선=지형차단)
+  ├─ TrajectoryLayer   — 탄도 포물선 (3D 시나리오)
+  ├─ ReasoningTimeline — AI 결정 타임라인 (우측 레일)
+  ├─ ScenarioPicker    — 시나리오 선택 + Run (좌측 레일)
+  └─ CampaignScoreboard— 캠페인 KPI + 극장별 통계 (좌측 레일)
+```
+
+### 데이터 생성 (수동)
+
+```powershell
+# 레포 루트에서 — 단일 시나리오 실행
+python -m dexia.agent.loop_cli --scenario ridge-los-p4
+# → reasoning_trace.jsonl  (16 사이클)
+# → world_snapshot.jsonl   (16 사이클, LOS 포함)
+
+# 캠페인 전체 평가 (CampaignScoreboard용)
+python -m dexia.agent.campaign --count 20
+# → scenario_evals.jsonl
+```
+
+### HUD 실행
+
+```powershell
+cd dexia-hud
+npm run dev
+```
+
+- **GCS 대시보드**: http://localhost:3000
+- **워게임 HUD**: http://localhost:3000/wargame
+
+### LOS 설계 원칙
+
+**HUD는 표시 전용** — LOS는 Python `physics3d.clear_los(terrain, obs, tgt)`로 시뮬에서 미리 계산되어 `world_snapshot.jsonl`의 `los[]`에 기록됨. MapLibre에서 raycast를 재구현하지 않는다. 이는 다음을 보장한다:
+
+1. **단일 진실원천**: Python P4 테스트와 HUD 표시가 동일한 LOS 결과
+2. **성능**: N×M 레이캐스트가 매 프레임이 아닌 시뮬 시간에 한 번만 계산
+3. **센서 확장성**: 새 센서가 추가되어도 HUD는 `visible` boolean만 읽으면 됨

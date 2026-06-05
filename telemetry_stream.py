@@ -37,8 +37,10 @@ import numpy as np
 from dexia.envs.drone_marl_env import DroneMARLEnv, RECON_PREFIX
 from dexia.integrations.command_queue import drain_commands
 from dexia.ontology import InMemoryRegistry, ingest as ontology_ingest
+from dexia.ontology.store import get_store
 
 ONTOLOGY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ontology_state.json")
+SNAPSHOT_EVERY = 10  # persist a typed ontology snapshot to dexia.db every N ticks
 
 
 def _atomic_write_json(path: str, obj) -> None:
@@ -47,7 +49,21 @@ def _atomic_write_json(path: str, obj) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(obj, f)
-        os.replace(tmp, path)
+        # Windows: os.replace raises PermissionError (WinError 5) if the dest is
+        # momentarily open by a reader (the FastAPI process reads telemetry.json /
+        # ontology_state.json concurrently) or an AV/indexer holds a transient
+        # handle. Retry with bounded backoff (~150ms) instead of crashing the
+        # stream loop — same hardening the command_queue uses.
+        delay = 0.01
+        for attempt in range(8):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if attempt == 7:
+                    return  # skip this frame's write; next tick rewrites it
+                time.sleep(delay)
+                delay = min(delay * 1.6, 0.03)
     finally:
         if os.path.exists(tmp):
             try:
@@ -70,15 +86,9 @@ class JsonFileSink:
         self.kind = "json"
 
     def publish(self, record: dict) -> None:
-        d = os.path.dirname(self.path) or "."
-        fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(record, f)
-            os.replace(tmp, self.path)   # atomic on Windows + POSIX
-        finally:
-            if os.path.exists(tmp):
-                os.remove(tmp)
+        # Reuse the hardened writer (retry-with-backoff over the Windows
+        # os.replace lock race with the FastAPI reader).
+        _atomic_write_json(self.path, record)
 
     def close(self) -> None:
         pass
@@ -154,12 +164,6 @@ def make_sink(prefer_redis: bool = True, json_path: str = DEFAULT_JSON_PATH):
 # --------------------------------------------------------------------------- #
 # Serialization helpers
 # --------------------------------------------------------------------------- #
-def _role(agent_id: str) -> str:
-    if agent_id.startswith(RECON_PREFIX):
-        idx = agent_id.rsplit("_", 1)[-1]
-        return f"Recon {idx}"
-    idx = agent_id.rsplit("_", 1)[-1]
-    return f"Kamikaze {idx}"
 
 
 def build_record(env: DroneMARLEnv, tick: int, infos: dict) -> dict:
@@ -176,10 +180,20 @@ def build_record(env: DroneMARLEnv, tick: int, infos: dict) -> dict:
         st = env.engines[aid].get_state()
         wind_mags.append(float(info.get("wind_mag", 0.0)))
         speed = float(np.linalg.norm(st.velocity))
+        
+        # Recon if explicitly tagged on deploy (commander's role choice), else by
+        # id prefix / profile name.
+        meta = env._spawn_meta.get(aid, {}) or {}
+        prof_name = str(meta.get("profile_name") or "").lower()
+        is_recon = (aid.startswith(RECON_PREFIX)
+                    or str(meta.get("role", "")).lower() == "recon"
+                    or "recon" in prof_name)
+        idx = aid.rsplit("_", 1)[-1]
+        
         agents.append({
             "id": aid,
-            "role": _role(aid),
-            "kind": "recon" if aid.startswith(RECON_PREFIX) else "kami",
+            "role": f"Recon {idx}" if is_recon else f"Kamikaze {idx}",
+            "kind": "recon" if is_recon else "kami",
             "pos": [float(x) for x in st.position],
             "vel": [float(x) for x in st.velocity],
             "euler_deg": [float(np.rad2deg(a)) for a in st.orientation],
@@ -345,6 +359,41 @@ def takeoff_action(engine, target_alt: float = 1.6) -> np.ndarray:
     return np.full(engine.N_MOTORS, a, dtype=np.float64)
 
 
+def dynamic_scenario_positions(env: DroneMARLEnv) -> dict:
+    """Dynamically compute target positions for all active drones for the kill-chain demo."""
+    out = {}
+    for aid in env.possible_agents:
+        if not env.is_active(aid):
+            continue
+        meta = env._spawn_meta.get(aid, {}) or {}
+        prof_name = str(meta.get("profile_name") or "").lower()
+        is_recon = (aid.startswith("agent_recon")
+                    or str(meta.get("role", "")).lower() == "recon"
+                    or "recon" in prof_name)
+
+        st = env.engines[aid].get_state()
+        pos = st.position.copy()
+        
+        if is_recon:
+            target = env.observation_point.copy()
+        else:
+            if env._broadcast:
+                target = env.target.copy()
+            else:
+                target = env.loiter_center.copy()
+                
+        # Move towards target (simulate ~3.0 m/s kinematic speed)
+        dt = 0.1 # 10Hz
+        speed = 3.0
+        
+        dir_vec = target - pos
+        dist = np.linalg.norm(dir_vec)
+        if dist > (speed * dt):
+            out[aid] = pos + (dir_vec / dist) * (speed * dt)
+        else:
+            out[aid] = target.copy()
+    return out
+
 def run(ticks: int | None, hz: float, json_path: str, prefer_redis: bool) -> int:
     sink = make_sink(prefer_redis=prefer_redis, json_path=json_path)
     env = make_interactive_env()
@@ -352,6 +401,7 @@ def run(ticks: int | None, hz: float, json_path: str, prefer_redis: bool) -> int
 
     # DroneOntology registry (Phase 6) — populated post-physics from telemetry.
     registry = InMemoryRegistry()
+    lineage_store = get_store()  # SQLite — persisted ontology history (off the hot loop)
 
     dt = 1.0 / hz if hz > 0 else 0.0
 
@@ -369,15 +419,25 @@ def run(ticks: int | None, hz: float, json_path: str, prefer_redis: bool) -> int
                       f"{res.get('agent_id') or ''} ok={res.get('ok')}"
                       f"{'' if res.get('ok') else ' ('+str(res.get('reason'))+')'}")
 
-            # 1) actions: ARMED -> physics takeoff/altitude-hold per active drone;
+            # 1) actions: ARMED -> dynamic kill-chain kinematic override;
             #    DISARMED -> env freezes drones regardless, so any action is fine.
             if env.is_armed():
-                actions = {
-                    aid: takeoff_action(env.engines[aid])
-                    for aid in env.possible_agents if env.is_active(aid)
-                }
+                target_positions = dynamic_scenario_positions(env)
+                actions = {}
                 for aid in env.possible_agents:
-                    actions.setdefault(aid, env.engines[aid].hover_action)
+                    if not env.is_active(aid):
+                        actions[aid] = env.engines[aid].hover_action
+                        continue
+                    
+                    tpos = target_positions[aid]
+                    eng = env.engines[aid]
+                    
+                    # Kinematic override for robust demo trajectory
+                    eng.data.qpos[eng._qpos_adr : eng._qpos_adr + 3] = tpos
+                    # Dampen velocity so MuJoCo physics don't fight the override
+                    eng.data.qvel[eng._qvel_adr : eng._qvel_adr + 6] *= 0.1
+                    
+                    actions[aid] = takeoff_action(eng, target_alt=tpos[2])
             else:
                 actions = {aid: env.engines[aid].hover_action for aid in env.possible_agents}
 
@@ -387,7 +447,13 @@ def run(ticks: int | None, hz: float, json_path: str, prefer_redis: bool) -> int
 
             # --- Ontology (Phase 6): flat record -> typed object graph -----
             ontology_ingest(registry, record)
-            _atomic_write_json(ONTOLOGY_PATH, registry.snapshot())
+            snap = registry.snapshot()
+            _atomic_write_json(ONTOLOGY_PATH, snap)  # live "latest" cache (OSS reads)
+            if t % SNAPSHOT_EVERY == 0:               # persisted history (queryable)
+                try:
+                    lineage_store.write_snapshot(t, snap)
+                except Exception:
+                    pass
 
             if record["aa"] and record["aa"]["destroyed"]:
                 print(f"  tick {t:3d}: AA-KILL {record['aa']['destroyed']} "

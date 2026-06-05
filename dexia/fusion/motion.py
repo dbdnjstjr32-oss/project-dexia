@@ -51,7 +51,8 @@ class MotionModel:
     by EffectResolver ISR reposition)."""
 
     def __init__(self, entity, engine, domain: str, *, route: Optional[list] = None,
-                 cruise_alt: float = _UAV_AGL, capture: float = _AIR_CAPTURE) -> None:
+                 cruise_alt: float = _UAV_AGL, capture: float = _AIR_CAPTURE,
+                 orbit: Optional[dict] = None) -> None:
         self.entity = entity
         self.engine = engine
         self.domain = domain
@@ -59,6 +60,7 @@ class MotionModel:
         self.wi = 0
         self.cruise_alt = float(cruise_alt)
         self.capture = float(capture)
+        self.orbit = orbit          # {"center": [x, y], "r": float, "alt": float} or None
         if domain == "air":
             self._aim_air()
         self._write(self.engine.state())   # entity gets correct 3D state on attach
@@ -75,13 +77,27 @@ class MotionModel:
         self.entity.heading = float(getattr(self.engine, "psi",
                                             getattr(self.engine, "chi", b.heading())))
 
+    def _aim_orbit(self) -> None:
+        """Chase a point led around the loiter circle, so a fixed-wing that can't
+        hover flies a continuous orbit over the area of interest."""
+        c = self.orbit
+        cx, cy = float(c["center"][0]), float(c["center"][1])
+        r = float(c.get("r", 800.0))
+        alt = float(c.get("alt", self.cruise_alt))
+        ang = math.atan2(self.engine.y - cy, self.engine.x - cx)
+        lead = ang + 0.6                      # rad ahead → pulls the aircraft around
+        self.engine.set_target((cx + r * math.cos(lead), cy + r * math.sin(lead), alt))
+
     # ---- step / queries ------------------------------------------------- #
     def step(self, dt: float):
-        if self.domain == "air" and self.wi < len(self.route):
-            wp = self.route[self.wi]
-            if math.hypot(self.engine.x - wp[0], self.engine.y - wp[1]) <= self.capture:
-                self.wi += 1
-                self._aim_air()
+        if self.domain == "air":
+            if self.wi < len(self.route):
+                wp = self.route[self.wi]
+                if math.hypot(self.engine.x - wp[0], self.engine.y - wp[1]) <= self.capture:
+                    self.wi += 1
+                    self._aim_air()
+            elif self.orbit is not None:
+                self._aim_orbit()             # route done → loiter on station
         b = self.engine.step(dt)
         self._write(b)
         return b
@@ -91,11 +107,28 @@ class MotionModel:
             return self.wi >= len(self.route)
         return self.engine.arrived()
 
+    def orbiting(self) -> bool:
+        return self.domain == "air" and self.orbit is not None and self.wi >= len(self.route)
+
+    def set_route(self, wps, *, orbit: Optional[dict] = None,
+                  cruise_alt: Optional[float] = None) -> None:
+        """Re-task with a full multi-waypoint route (+ optional loiter orbit)."""
+        self.route = [[float(p[0]), float(p[1])] for p in wps]
+        self.wi = 0
+        self.orbit = orbit
+        if cruise_alt is not None:
+            self.cruise_alt = float(cruise_alt)
+        if self.domain == "air":
+            self._aim_air()
+        else:
+            self.engine.set_waypoints(self.route)
+
     def retarget(self, xy) -> None:
         """Re-aim to a single point (ISR reposition). Resets waypoint sequencing."""
         pt = [float(xy[0]), float(xy[1])]
         self.route = [pt]
         self.wi = 0
+        self.orbit = None
         if self.domain == "air":
             self._aim_air()
         else:
@@ -103,6 +136,24 @@ class MotionModel:
 
 
 # --------------------------------------------------------------------------- #
+def attach_air_recon(entity, spec, terrain: Heightfield, route, *,
+                     orbit: Optional[dict] = None, cruise_agl: float = _UAV_AGL) -> "MotionModel":
+    """Attach an air MotionModel to a recon UAV that was spawned static (no motion
+    at build time). Resets the engine at the UAV's CURRENT altitude so it climbs to
+    cruise as it flies the route (an honest take-off/climb, not a teleport), then
+    loiters on the orbit. Used when the commander/AIP first tasks an ISR sweep."""
+    params = dict(_UAV_PARAMS)
+    if spec is not None and spec.constraints.get("cruise_mps"):
+        params["cruise"] = float(spec.constraints["cruise_mps"])
+    x0, y0 = float(entity.position[0]), float(entity.position[1])
+    z0 = float(entity.position[2]) if len(entity.position) > 2 else terrain.height(x0, y0)
+    cruise_alt = terrain.height(x0, y0) + float(cruise_agl)
+    eng = make_air_engine(getattr(entity, "hero", False), params, cruise_alt=cruise_alt)
+    eng.reset((x0, y0, z0), V=params["cruise"])     # start where it sits → it climbs
+    wps = [[float(p[0]), float(p[1])] for p in route]
+    return MotionModel(entity, eng, "air", route=wps, cruise_alt=cruise_alt, orbit=orbit)
+
+
 def build_motion(entity, spec, terrain: Heightfield) -> Optional[MotionModel]:
     """Construct the MotionModel for a mobile entity, dispatched on ``spec.domain``.
 

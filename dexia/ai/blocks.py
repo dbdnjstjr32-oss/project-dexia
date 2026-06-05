@@ -201,7 +201,12 @@ class MissionUpdateBlock(Block):
             kw = rec.get("kwargs", {})
             if tool in self._ACTION_MAP:
                 action_type, mk = self._ACTION_MAP[tool]
-                res = bus.submit(action_type, agent_id=kw.get("agent_id"), payload=mk(kw))
+                # Display-only governance preview: same ActionType rules as the
+                # execution path, but principal=system-aip and NO lineage write
+                # (the actual write happens when the commander approves via the API).
+                res = bus.submit(action_type, agent_id=kw.get("agent_id"),
+                                 payload=mk(kw), principal="system-aip",
+                                 record_lineage=False)
                 rec["governance"] = res["status"]
                 if res["status"] == "rejected":
                     rec["governance_reason"] = res.get("reason")

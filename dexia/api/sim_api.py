@@ -22,7 +22,7 @@ import time
 import uuid
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from ..integrations.command_queue import append_command, DEFAULT_PATH as COMMANDS_PATH
@@ -33,6 +33,16 @@ from ..evals import (
     episode_from_telemetry,
     observability_summary,
 )
+from ..ontology import (
+    ACTION_REGISTRY,
+    ActionBus,
+    InMemoryRegistry,
+    clearance_ok,
+    get_store,
+    to_api_call,
+)
+from ..ontology.serializer import registry_from_snapshot
+from .auth import API_KEY_HEADER, Principal, resolve_principal
 from ..runtime import HealthMonitor, get_config
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -82,6 +92,7 @@ class DeployRequest(BaseModel):
     y: float = Field(..., description="local sim Y [m]")
     z: float = Field(0.3, description="spawn altitude [m] (staged on ground)")
     profile: Optional[dict] = Field(None, description="airframe profile dict (Garage)")
+    role: str = Field("kami", description="drone role: 'recon' (scout->broadcast) | 'kami' (strike)")
 
 
 class PlaceRequest(BaseModel):
@@ -98,6 +109,68 @@ class CommandAck(BaseModel):
     queued_id: str
     action: str
     detail: Optional[str] = None
+
+
+class GovernedAck(BaseModel):
+    ok: bool
+    action: str
+    principal: str
+    lineage_id: Optional[int] = None
+    command_id: Optional[str] = None
+    detail: Optional[str] = None
+
+
+# --------------------------------------------------------------------------- #
+# Auth + governance — the single write-funnel (AIP Funnel role)
+# --------------------------------------------------------------------------- #
+def authenticated(x_dexia_key: Optional[str] = Header(None, alias=API_KEY_HEADER)) -> Principal:
+    """FastAPI dependency: resolve the API key to a Principal or 401."""
+    principal = resolve_principal(x_dexia_key)
+    if principal is None:
+        raise HTTPException(status_code=401,
+                            detail=f"missing or invalid API key ({API_KEY_HEADER})")
+    return principal
+
+
+def _live_registry():
+    """A typed registry rebuilt from the latest ontology snapshot for the
+    ActionBus guards (LOST drone / kill-chain MAC). Best-effort: an empty
+    registry if the streamer hasn't written one yet (deploy/arm still queue)."""
+    try:
+        return registry_from_snapshot(_load_ontology())
+    except HTTPException:
+        return InMemoryRegistry()
+
+
+def _govern_enqueue(action: str, principal: Principal, payload: dict,
+                    agent_id: Optional[str] = None) -> GovernedAck:
+    """THE funnel: clearance (403) -> ontology guards via ActionBus (409, lineage)
+    -> enqueue the Action's side-effect command (202). Nothing writes state by
+    any other path."""
+    at = ACTION_REGISTRY.get(action)
+    if at is None:
+        raise HTTPException(status_code=400, detail=f"unknown action '{action}'")
+    if not clearance_ok(principal.clearance, at.required_clearance):
+        raise HTTPException(
+            status_code=403,
+            detail=f"clearance '{principal.clearance}' insufficient for '{action}' "
+                   f"(requires '{at.required_clearance}')",
+        )
+    bus = ActionBus(_live_registry(), store=get_store())
+    result = bus.submit(action, agent_id=agent_id, payload=payload,
+                        principal=principal.name, record_lineage=True)
+    if result["status"] == "rejected":
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": result.get("reason"), "lineage_id": result.get("lineage_id")},
+        )
+    command_id = None
+    cmd = result.get("command")
+    if cmd:
+        fields = {k: v for k, v in cmd.items() if k != "action"}
+        command_id = _enqueue(cmd["action"], **fields).queued_id
+    return GovernedAck(ok=True, action=action, principal=principal.name,
+                       lineage_id=result.get("lineage_id"), command_id=command_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -148,46 +221,50 @@ def telemetry() -> dict:
 # --------------------------------------------------------------------------- #
 # Control endpoints (LLM/HITL tools)
 # --------------------------------------------------------------------------- #
-@app.post("/api/sim/deploy", response_model=CommandAck)
-def deploy_drone(req: DeployRequest) -> CommandAck:
+@app.post("/api/sim/deploy", response_model=GovernedAck)
+def deploy_drone(req: DeployRequest, principal: Principal = Depends(authenticated)) -> GovernedAck:
     """Deploy a friendly drone from the Object Pool (staged until ACTIVATE)."""
-    return _enqueue("spawn", x=req.x, y=req.y, z=req.z, profile=req.profile)
+    return _govern_enqueue("deploy", principal,
+                           {"x": req.x, "y": req.y, "z": req.z, "profile": req.profile,
+                            "role": req.role})
 
 
-@app.post("/api/sim/enemy", response_model=CommandAck)
-def set_enemy(req: PlaceRequest) -> CommandAck:
+@app.post("/api/sim/enemy", response_model=GovernedAck)
+def set_enemy(req: PlaceRequest, principal: Principal = Depends(authenticated)) -> GovernedAck:
     """Place the enemy strongpoint (AA battery + target)."""
-    return _enqueue("set_enemy", x=req.x, y=req.y)
+    return _govern_enqueue("set_enemy", principal, {"x": req.x, "y": req.y})
 
 
-@app.post("/api/sim/friendly", response_model=CommandAck)
-def set_friendly(req: PlaceRequest) -> CommandAck:
+@app.post("/api/sim/friendly", response_model=GovernedAck)
+def set_friendly(req: PlaceRequest, principal: Principal = Depends(authenticated)) -> GovernedAck:
     """Place the friendly camp (base station + loiter centre)."""
-    return _enqueue("set_friendly", x=req.x, y=req.y)
+    return _govern_enqueue("set_friendly", principal, {"x": req.x, "y": req.y})
 
 
-@app.post("/api/sim/activate", response_model=CommandAck)
-def activate() -> CommandAck:
-    """ARM the scenario — staged drones take off under physics; AA goes live."""
-    return _enqueue("arm")
+@app.post("/api/sim/activate", response_model=GovernedAck)
+def activate(principal: Principal = Depends(authenticated)) -> GovernedAck:
+    """ARM the scenario — staged drones take off under physics; AA goes live.
+    Commander-only escalation (enforced by the ActionType clearance)."""
+    return _govern_enqueue("activate", principal, {})
 
 
-@app.post("/api/sim/standby", response_model=CommandAck)
-def standby() -> CommandAck:
+@app.post("/api/sim/standby", response_model=GovernedAck)
+def standby(principal: Principal = Depends(authenticated)) -> GovernedAck:
     """DISARM — freeze drones at their placed positions, AA holds fire."""
-    return _enqueue("disarm")
+    return _govern_enqueue("standby", principal, {})
 
 
-@app.post("/api/sim/recall", response_model=CommandAck)
-def recall_drone(req: RemoveRequest) -> CommandAck:
+@app.post("/api/sim/recall", response_model=GovernedAck)
+def recall_drone(req: RemoveRequest, principal: Principal = Depends(authenticated)) -> GovernedAck:
     """Return-to-base / recall a drone to the pool (or flag destroyed)."""
-    return _enqueue("remove", agent_id=req.agent_id)
+    return _govern_enqueue("recall", principal, {"agent_id": req.agent_id},
+                           agent_id=req.agent_id)
 
 
-@app.post("/api/sim/clear", response_model=CommandAck)
-def clear_scenario() -> CommandAck:
-    """Recall all deployed drones and disarm."""
-    return _enqueue("clear")
+@app.post("/api/sim/clear", response_model=GovernedAck)
+def clear_scenario(principal: Principal = Depends(authenticated)) -> GovernedAck:
+    """Recall all deployed drones and disarm. Commander-only."""
+    return _govern_enqueue("clear", principal, {})
 
 
 # Tool catalogue the LLM agent introspects (kept in sync with the endpoints).
@@ -270,6 +347,21 @@ def ontology_killchain() -> dict:
 def ontology_mission() -> dict:
     missions = _load_ontology()["objects"].get("MissionObject", [])
     return missions[0] if missions else {}
+
+
+@app.get("/ontology/lineage")
+def ontology_lineage(limit: int = 50) -> dict:
+    """Immutable Action provenance trail — every governed write (who · what ·
+    accepted/rejected · resulting command). The AIP lineage/audit surface."""
+    rows = get_store().recent_lineage(limit=limit)
+    return {"count": len(rows), "lineage": rows}
+
+
+@app.get("/ontology/drones/{drone_id}/history")
+def ontology_drone_history(drone_id: str, limit: int = 50) -> dict:
+    """Per-tick trajectory of one drone reconstructed from persisted snapshots."""
+    rows = get_store().drone_history(drone_id, limit=limit)
+    return {"agent_id": drone_id, "count": len(rows), "history": rows}
 
 
 # --------------------------------------------------------------------------- #

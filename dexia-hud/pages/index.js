@@ -1,11 +1,12 @@
 import { memo, useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { useTelemetry } from '../lib/useTelemetry';
-import { lngLatToLocal } from '../lib/geo';
+import { lngLatToLocal, clampLocal } from '../lib/geo';
 import DroneGarage from '../components/DroneGarage';
 import AIStaffCard from '../components/AIStaffCard';
 import EvalsPanel from '../components/EvalsPanel';
 import HitlApproval from '../components/HitlApproval';
+import BattlefieldTable from '../components/BattlefieldTable';
 
 // MapLibre touches `window`; load the map client-side only.
 const TacticalMap = dynamic(() => import('../components/TacticalMap'), { ssr: false });
@@ -27,10 +28,20 @@ export default function Dashboard() {
   const [buildTool, setBuildTool] = useState('drone'); // 'enemy'|'friendly'|'drone'|'remove'
   const [profiles, setProfiles] = useState([]);
   const [profileId, setProfileId] = useState('');
+  const [droneRole, setDroneRole] = useState('recon'); // 'recon' (scout) | 'kami' (strike)
   const [cmdMsg, setCmdMsg] = useState(null);
 
+  // Battlefield Tables — saved, named map areas remembering enemy/friendly layout
+  const [bfOpen, setBfOpen] = useState(false);
+  const [tables, setTables] = useState([]);
+  const [activeTableId, setActiveTableId] = useState(null);
+  const [picking, setPicking] = useState(false);   // map-click sets a new table centre
+  const [pickDraft, setPickDraft] = useState(null); // {name, extent_m}
+
   const armed = !!telemetry?.armed;
-  const activeTool = builderOpen ? buildTool : 'off';
+  // 'bf_center' while picking a table centre; else the builder tool (if open).
+  const activeTool = picking ? 'bf_center' : builderOpen ? buildTool : 'off';
+  const activeTable = tables.find((t) => t.id === activeTableId) || null;
 
   // load airframe profiles for the DRONE tool when the builder opens
   useEffect(() => {
@@ -51,25 +62,99 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const j = await r.json();
-      setCmdMsg(j.queued ? (label || `${body.action} queued`) : (j.error || 'command failed'));
+      const j = await r.json().catch(() => ({}));
+      // Governed funnel returns {ok, lineage_id, ...}; dev fallback returns
+      // {queued, ...}; rejections return {detail:{reason}} (409) or {detail}/{error}.
+      if (r.ok && j.ok !== false) {
+        setCmdMsg(label || `${body.action} ok`);
+      } else {
+        const reason = (j.detail && (j.detail.reason || j.detail)) || j.error || `HTTP ${r.status}`;
+        setCmdMsg('⛔ ' + String(reason));
+      }
     } catch (e) {
       setCmdMsg('command error: ' + e);
     }
   }, []);
 
+  // ---- Battlefield Table CRUD ----
+  const refreshTables = useCallback(async () => {
+    try {
+      const j = await (await fetch('/api/battlefields')).json();
+      setTables(j.tables || []);
+    } catch { /* keep last */ }
+  }, []);
+
+  useEffect(() => { if (bfOpen) refreshTables(); }, [bfOpen, refreshTables]);
+
+  const createTable = useCallback(async (table) => {
+    try {
+      const j = await (await fetch('/api/battlefields', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(table),
+      })).json();
+      if (j.table) { await refreshTables(); setActiveTableId(j.table.id); setCmdMsg(`전장 테이블 '${j.table.name}' 생성`); }
+    } catch { setCmdMsg('테이블 생성 실패'); }
+  }, [refreshTables]);
+
+  // persist a field into the ACTIVE table (auto-remember placements)
+  const saveActive = useCallback((patch) => {
+    setTables((cur) => {
+      const t = cur.find((x) => x.id === activeTableId);
+      if (t) {
+        fetch('/api/battlefields', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...t, ...patch }),
+        }).then(() => refreshTables()).catch(() => {});
+      }
+      return cur;
+    });
+  }, [activeTableId, refreshTables]);
+
+  const startPickCenter = useCallback((draft) => { setPickDraft(draft); setPicking(true); }, []);
+
+  const openTable = useCallback((t) => {
+    setActiveTableId(t.id);
+    // restore the remembered layout to the LIVE sim (governed funnel)
+    if (t.enemy) sendCommand({ action: 'set_enemy', x: t.enemy[0], y: t.enemy[1] }, `적 진지 복원`);
+    if (t.friendly) sendCommand({ action: 'set_friendly', x: t.friendly[0], y: t.friendly[1] }, `아군 진영 복원`);
+    setCmdMsg(`전장 '${t.name}' 로드`);
+  }, [sendCommand]);
+
+  const deleteTable = useCallback(async (id) => {
+    try {
+      await fetch('/api/battlefields?id=' + encodeURIComponent(id), { method: 'DELETE' });
+      if (activeTableId === id) setActiveTableId(null);
+      refreshTables();
+    } catch { /* ignore */ }
+  }, [activeTableId, refreshTables]);
+
   const onMapClick = useCallback(
     ({ lng, lat, tool }) => {
-      const [x, y] = lngLatToLocal(lng, lat);
+      // clamp into the active table's area (or the default arena) so units never
+      // land kilometres off-screen
+      const at_t = tables.find((t) => t.id === activeTableId);
+      const [x, y] = clampLocal(
+        lngLatToLocal(lng, lat),
+        at_t ? at_t.center : [0, 0],
+        at_t ? at_t.extent_m : undefined
+      );
       const at = `[${x.toFixed(1)}, ${y.toFixed(1)}]`;
-      if (tool === 'enemy') sendCommand({ action: 'set_enemy', x, y }, `적 진지 → ${at}`);
-      else if (tool === 'friendly') sendCommand({ action: 'set_friendly', x, y }, `아군 진영 → ${at}`);
-      else if (tool === 'drone') {
+      if (tool === 'bf_center') {
+        if (pickDraft) createTable({ ...pickDraft, center: clampLocal(lngLatToLocal(lng, lat)) });
+        setPicking(false);
+        return;
+      }
+      if (tool === 'enemy') {
+        sendCommand({ action: 'set_enemy', x, y }, `적 진지 → ${at}`);
+        if (activeTableId) saveActive({ enemy: [x, y] }); // remember into active table
+      } else if (tool === 'friendly') {
+        sendCommand({ action: 'set_friendly', x, y }, `아군 진영 → ${at}`);
+        if (activeTableId) saveActive({ friendly: [x, y] });
+      } else if (tool === 'drone') {
         const profile = profiles.find((p) => p.id === profileId) || null;
-        sendCommand({ action: 'spawn', x, y, z: 0.3, lon: lng, lat, profile }, `드론 배치 → ${at}`);
+        const label = droneRole === 'recon' ? '정찰 드론' : '자폭 드론';
+        sendCommand({ action: 'spawn', x, y, z: 0.3, lon: lng, lat, profile, role: droneRole }, `${label} 배치 → ${at}`);
       }
     },
-    [profiles, profileId, sendCommand]
+    [profiles, profileId, droneRole, sendCommand, pickDraft, createTable, activeTableId, saveActive, tables]
   );
 
   const onDroneRemove = useCallback(
@@ -92,9 +177,21 @@ export default function Dashboard() {
         invert={invert}
         onMapClick={onMapClick}
         onDroneRemove={onDroneRemove}
+        battlefield={activeTable}
       />
 
       <DroneGarage open={garageOpen} onClose={() => setGarageOpen(false)} />
+
+      <BattlefieldTable
+        open={bfOpen}
+        tables={tables}
+        activeId={activeTableId}
+        picking={picking}
+        onStartPick={startPickCenter}
+        onOpen={openTable}
+        onDelete={deleteTable}
+        onClose={() => setBfOpen(false)}
+      />
 
       {builderOpen && (
         <div style={S.builderBar}>
@@ -122,11 +219,31 @@ export default function Dashboard() {
           </div>
 
           {buildTool === 'drone' && (
-            <select value={profileId} onChange={(e) => setProfileId(e.target.value)} style={S.builderSelect}>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>{p.name} ({p.topology})</option>
-              ))}
-            </select>
+            <>
+              <div style={S.roleToggle}>
+                {[
+                  { id: 'recon', label: '🛰 정찰', c: '#2f9bff' },
+                  { id: 'kami', label: '💥 자폭', c: '#ff3b3b' },
+                ].map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => setDroneRole(r.id)}
+                    style={{
+                      ...S.roleBtn,
+                      ...(droneRole === r.id ? { background: '#13202d', color: r.c, boxShadow: `inset 0 0 0 1px ${r.c}` } : {}),
+                    }}
+                    title={r.id === 'recon' ? '정찰: 표적 상공 정찰 → 좌표 방송(킬체인 개시)' : '자폭: 방송 후 표적 돌입 타격'}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+              <select value={profileId} onChange={(e) => setProfileId(e.target.value)} style={S.builderSelect}>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name} ({p.topology})</option>
+                ))}
+              </select>
+            </>
           )}
 
           <button
@@ -167,6 +284,13 @@ export default function Dashboard() {
             title="Toggle tactical map colour inversion"
           >
             ◐ INVERT
+          </button>
+          <button
+            style={{ ...S.garageBtn, ...(bfOpen ? S.deployBtnActive : {}) }}
+            onClick={() => setBfOpen((v) => !v)}
+            title="전장 테이블 — 구역을 저장하고 적/아군 배치를 기억"
+          >
+            ▦ 전장
           </button>
           <button style={S.garageBtn} onClick={() => setGarageOpen(true)}>◈ GARAGE</button>
           <BasemapSwitch value={basemap} onChange={setBasemap} />
@@ -349,6 +473,8 @@ const S = {
   toolRow: { display: 'flex', gap: 4 },
   toolBtn: { background: 'transparent', color: '#8c97a3', border: '1px solid #243042', borderRadius: 5, padding: '6px 11px', cursor: 'pointer', fontSize: 12, fontWeight: 700 },
   builderSelect: { background: '#0a0e13', color: '#e6e6e6', border: '1px solid #243042', borderRadius: 5, padding: '5px 8px', fontSize: 12 },
+  roleToggle: { display: 'flex', gap: 3 },
+  roleBtn: { background: 'transparent', color: '#8c97a3', border: '1px solid #243042', borderRadius: 5, padding: '6px 9px', cursor: 'pointer', fontSize: 12, fontWeight: 700 },
   activateBtn: { background: '#1f7a3d', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 16px', cursor: 'pointer', fontWeight: 800, fontSize: 13, letterSpacing: 0.5, boxShadow: '0 0 14px rgba(31,122,61,0.5)' },
   activateBtnArmed: { background: '#7a1f1f', boxShadow: '0 0 14px rgba(122,31,31,0.5)' },
   clearBtn: { background: 'transparent', color: '#8c97a3', border: '1px solid #243042', borderRadius: 5, padding: '6px 11px', cursor: 'pointer', fontSize: 12, fontWeight: 600 },

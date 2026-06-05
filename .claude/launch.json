@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hud",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "dexia-hud", "run", "dev"],
+      "port": 3000
+    }
+  ]
+}

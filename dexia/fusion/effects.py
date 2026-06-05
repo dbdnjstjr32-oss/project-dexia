@@ -165,6 +165,36 @@ class EffectResolver:
         return EffectEvent(tick, "jam", "suppressed", asset.entity_id,
                            f"emitters off {JAM_DURATION}t: {hit}", hit)
 
+    def _do_recon_route(self, cmd: dict, tick: int) -> EffectEvent:
+        """Task a recon UAV with a full planned route + loiter orbit. On the 3D
+        physics path the platform climbs to cruise and self-navigates the sweep;
+        on the flat/legacy path it follows the waypoints with the scripted mover."""
+        asset = self.world.get(cmd.get("asset_id"))
+        if asset is None or not asset.alive:
+            return EffectEvent(tick, "recon", "rejected", detail="no such asset")
+        route = cmd.get("route") or []
+        if not route:
+            return EffectEvent(tick, "recon", "rejected", asset.entity_id, "empty route")
+        orbit = cmd.get("orbit")
+        terrain = getattr(self.world, "terrain", None)
+        spec = self.cat.get(asset.cls)
+        if terrain is not None:
+            from .motion import attach_air_recon
+            mm = getattr(asset, "_motion", None)
+            if mm is not None and getattr(mm, "domain", None) == "air":
+                mm.set_route(route, orbit=orbit)          # already airborne → re-task
+            else:
+                asset._motion = attach_air_recon(asset, spec, terrain, route, orbit=orbit)
+        else:
+            # flat/legacy world: scripted multi-waypoint sweep at current altitude
+            asset.route = [list(p) for p in route]
+            asset._leg = 0
+            asset.behavior = "advance"
+            asset.speed_mps = ISR_REPOSITION_SPEED
+        return EffectEvent(tick, "recon", "tasked", asset.entity_id,
+                           f"ISR route {len(route)} waypoints, climbing & sweeping"
+                           + (" then orbit" if orbit else ""))
+
     def _do_isr(self, cmd: dict, tick: int) -> EffectEvent:
         asset = self.world.get(cmd.get("asset_id"))
         if asset is None or not asset.alive:

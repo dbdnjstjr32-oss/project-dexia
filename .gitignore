@@ -37,6 +37,14 @@ phase3_results.html
 *.zip
 Dexia_Wargame_Sim_Final/
 
+# --- SQLite lineage / ontology history (AIP write-funnel) ---
+dexia.db
+dexia.db-wal
+dexia.db-shm
+
+# --- HUD saved battlefield tables (user data) ---
+battlefield_tables.json
+
 # --- Misc ---
 *.tmp
 .DS_Store

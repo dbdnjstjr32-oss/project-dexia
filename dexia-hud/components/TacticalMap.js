@@ -15,7 +15,9 @@ import {
   localToLngLat,
   threatCircleGeoJSON,
   lineGeoJSON,
-  gridGeoJSON,
+  simGridGeoJSON,
+  rectGeoJSON,
+  anchorBounds,
 } from '../lib/geo';
 
 const ESRI_SAT =
@@ -115,7 +117,7 @@ function makeUnitEl() {
   return { el, name, equip };
 }
 
-function TacticalMapImpl({ telemetry, basemap = 'satellite', buildTool = 'off', invert = false, onMapClick, onDroneRemove }) {
+function TacticalMapImpl({ telemetry, basemap = 'satellite', buildTool = 'off', invert = false, onMapClick, onDroneRemove, battlefield = null }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef({});
@@ -123,6 +125,7 @@ function TacticalMapImpl({ telemetry, basemap = 'satellite', buildTool = 'off', 
   const overlaysRef = useRef(false);
   const aaPopupRef = useRef(null);
   const friendlyMarkerRef = useRef(null);
+  const lastBfIdRef = useRef(null);
 
   // latest-prop refs so the one-time event handlers never go stale
   const basemapRef = useRef(basemap); basemapRef.current = basemap;
@@ -140,6 +143,9 @@ function TacticalMapImpl({ telemetry, basemap = 'satellite', buildTool = 'off', 
       // Flat 2D top-down map (3D terrain disabled). maxPitch kept so the user
       // can still manually tilt if they want, but defaults to flat.
       zoom: INITIAL_ZOOM, pitch: INITIAL_PITCH, bearing: INITIAL_BEARING, maxPitch: 85,
+      // Constrain panning/zoom to the sim arena so map clicks always yield small,
+      // on-screen local coords (no more units placed kilometres off-area).
+      maxBounds: anchorBounds(1600), minZoom: 15,
       attributionControl: false, antialias: true,
     });
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
@@ -160,11 +166,16 @@ function TacticalMapImpl({ telemetry, basemap = 'satellite', buildTool = 'off', 
       }
 
       // --- MGRS-style tactical grid (faint, under the AoE overlays) ---
-      map.addSource('mgrs-grid', { type: 'geojson', data: gridGeoJSON(3000, 500) });
+      map.addSource('mgrs-grid', { type: 'geojson', data: simGridGeoJSON(150, 10) });
       map.addLayer({
         id: 'mgrs-grid', type: 'line', source: 'mgrs-grid',
         paint: { 'line-color': '#5fa8d3', 'line-width': 0.6, 'line-opacity': 0.22 },
       });
+
+      // Battlefield Table — the pre-designated workspace area (dashed cyan box)
+      map.addSource('bf-table', { type: 'geojson', data: EMPTY });
+      map.addLayer({ id: 'bf-table-fill', type: 'fill', source: 'bf-table', paint: { 'fill-color': '#38bdf8', 'fill-opacity': 0.06 } });
+      map.addLayer({ id: 'bf-table-line', type: 'line', source: 'bf-table', paint: { 'line-color': '#38bdf8', 'line-width': 1.5, 'line-opacity': 0.7, 'line-dasharray': [3, 2] } });
 
       // EW / jamming area (widest, purple)
       map.addSource('aa-ew', { type: 'geojson', data: EMPTY });
@@ -219,6 +230,29 @@ function TacticalMapImpl({ telemetry, basemap = 'satellite', buildTool = 'off', 
     if (loadedRef.current) applyBasemap(map, basemap);
     else map.once('load', () => applyBasemap(map, basemap));
   }, [basemap]);
+
+  // --- battlefield table area: draw the rectangle + fly to it on open ----
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const draw = () => {
+      const src = map.getSource('bf-table');
+      if (!src) return;
+      if (battlefield && Array.isArray(battlefield.center)) {
+        src.setData({ type: 'FeatureCollection', features: [rectGeoJSON(battlefield.center, battlefield.extent_m)] });
+        // recentre only when a DIFFERENT table is opened (not on every auto-save)
+        if (lastBfIdRef.current !== battlefield.id) {
+          lastBfIdRef.current = battlefield.id;
+          map.flyTo({ center: localToLngLat(battlefield.center), zoom: INITIAL_ZOOM, duration: 800 });
+        }
+      } else {
+        src.setData(EMPTY);
+        lastBfIdRef.current = null;
+      }
+    };
+    if (loadedRef.current) draw();
+    else map.once('load', draw);
+  }, [battlefield]);
 
   // --- imperative overlay + marker update on every telemetry tick -------
   useEffect(() => {

@@ -16,6 +16,32 @@ export const WORLD_SCALE = 8; // display inflation of the ~15 m sim arena
 // sensible local coords (±~15 m) instead of kilometres off-area.
 export const INITIAL_ZOOM = 18.5;
 
+// ---- Wargame HUD constants (km-scale, ±8000 m sim frame) ----------------
+// Wargame positions are TRUE metres (ENU), so scale=1 projects them directly.
+// Zoom ~12-13 shows a ~20 km battlefield at a legible size.
+export const WARGAME_SCALE = 1;
+export const WARGAME_ZOOM  = 12.5;
+
+// Per-theater geographic anchors: the sim-frame origin [0,0] maps to this
+// real-world lat/lon.  Exact cartographic accuracy is not required — the map
+// is used for tactical display, not navigation.
+export const THEATER_ANCHORS = {
+  eastern_europe: { lat: 48.40, lon: 37.50 }, // Donbas region
+  ukraine:        { lat: 48.40, lon: 37.50 },
+  ua_east:        { lat: 48.40, lon: 37.50 },
+  korea:          { lat: 37.90, lon: 127.10 }, // central Korea
+  default:        { lat: 48.40, lon: 37.50 },
+};
+
+/** Return the best geographic anchor for a given theater string. */
+export function theaterAnchor(theater) {
+  const key = (theater || '').toLowerCase().replace(/-/g, '_');
+  return THEATER_ANCHORS[key] || THEATER_ANCHORS.default;
+}
+
+// Default wargame anchor (used before a scenario is selected)
+export const WARGAME_ANCHOR = THEATER_ANCHORS.default;
+
 const M_PER_DEG_LAT = 111320;
 
 function metersPerDegLon(lat) {
@@ -49,11 +75,61 @@ export function gridGeoJSON(extentM = 3000, stepM = 500, anchor = GEO_ANCHOR) {
   return { type: 'FeatureCollection', features: feats };
 }
 
+/** Tactical grid in the SIM frame (so cells = sim metres, consistent with unit
+ *  positions and threat-range circles which also use WORLD_SCALE). Replaces the
+ *  real-world MGRS grid whose true-metre spacing didn't match the inflated units.
+ *  halfLocal/stepLocal are LOCAL sim metres. */
+export function simGridGeoJSON(halfLocal = 150, stepLocal = 10, anchor = GEO_ANCHOR, scale = WORLD_SCALE) {
+  const line = (coords) => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } });
+  const feats = [];
+  for (let e = -halfLocal; e <= halfLocal + 1e-6; e += stepLocal) {
+    feats.push(line([localToLngLat([e, -halfLocal], anchor, scale), localToLngLat([e, halfLocal], anchor, scale)]));
+  }
+  for (let n = -halfLocal; n <= halfLocal + 1e-6; n += stepLocal) {
+    feats.push(line([localToLngLat([-halfLocal, n], anchor, scale), localToLngLat([halfLocal, n], anchor, scale)]));
+  }
+  return { type: 'FeatureCollection', features: feats };
+}
+
 /** Inverse: [lon, lat] -> local sim meters [x, y]. */
 export function lngLatToLocal(lon, lat, anchor = GEO_ANCHOR, scale = WORLD_SCALE) {
   const north = (lat - anchor.lat) * M_PER_DEG_LAT;
   const east = (lon - anchor.lon) * metersPerDegLon(anchor.lat);
   return [east / scale, north / scale];
+}
+
+// Half-size (in LOCAL sim metres) of the placeable arena. Keeps clicks/placements
+// bounded so units never end up kilometres off-screen. Display metres = ×WORLD_SCALE.
+export const ARENA_HALF_M = 120;
+
+/** Clamp a local [x, y] into the placeable arena (or a table's centre±extent). */
+export function clampLocal([x, y], center = [0, 0], halfM = ARENA_HALF_M) {
+  const cx = center[0] || 0, cy = center[1] || 0;
+  return [
+    Math.min(Math.max(x, cx - halfM), cx + halfM),
+    Math.min(Math.max(y, cy - halfM), cy + halfM),
+  ];
+}
+
+/** maxBounds [[W,S],[E,N]] around the anchor — constrains map panning so clicks
+ *  stay near the small sim arena (display metres). */
+export function anchorBounds(halfDisplayM = 1600, anchor = GEO_ANCHOR) {
+  const dLat = halfDisplayM / M_PER_DEG_LAT;
+  const dLon = halfDisplayM / metersPerDegLon(anchor.lat);
+  return [
+    [anchor.lon - dLon, anchor.lat - dLat],
+    [anchor.lon + dLon, anchor.lat + dLat],
+  ];
+}
+
+/** Square battlefield-table area polygon: center local [x,y] ± extentM (sim m). */
+export function rectGeoJSON(center, extentM, anchor = GEO_ANCHOR, scale = WORLD_SCALE) {
+  const [cx, cy] = center;
+  const e = Math.abs(extentM);
+  const corners = [
+    [cx - e, cy - e], [cx + e, cy - e], [cx + e, cy + e], [cx - e, cy + e], [cx - e, cy - e],
+  ].map((p) => localToLngLat(p, anchor, scale));
+  return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [corners] } };
 }
 
 /** GeoJSON LineString between two local points (sim meters). */

@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 html,
 body,
 #__next {
@@ -266,4 +270,51 @@ body,
 /* MapLibre attaches its own canvas; keep its controls dark-friendly */
 .maplibregl-ctrl-group {
   background: rgba(13, 18, 24, 0.85) !important;
+}
+
+/* ===== WARGAME HUD styles (Build #8) =================================
+   Components under pages/wargame.js and components/wargame/            */
+
+/* Rail children need pointer events even though the rail itself is none */
+.wg-rail-child {
+  pointer-events: auto;
+}
+
+/* Track marker popup (MapLibre Popup override) */
+.wg-track-popup .maplibregl-popup-content {
+  background: rgba(10, 14, 20, 0.95);
+  border: 1px solid #2a3441;
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+  max-width: 220px;
+}
+.wg-track-popup .maplibregl-popup-tip {
+  border-top-color: #2a3441;
+}
+
+/* Spinner animation for ScenarioPicker loading state */
+@keyframes wg-spin {
+  from { display: inline-block; transform: rotate(0deg); }
+  to   { display: inline-block; transform: rotate(360deg); }
+}
+.wg-spin {
+  animation: wg-spin 1s linear infinite;
+}
+
+/* ReasoningTimeline scrollbar */
+.wg-timeline-list::-webkit-scrollbar {
+  width: 4px;
+}
+.wg-timeline-list::-webkit-scrollbar-thumb {
+  background: #2a3441;
+  border-radius: 2px;
+}
+
+/* Scale control dark styling */
+.maplibregl-ctrl.maplibregl-ctrl-scale {
+  background: rgba(13, 18, 24, 0.75);
+  border-color: #2a3441;
+  color: #8899aa;
+  font-size: 10px;
 }

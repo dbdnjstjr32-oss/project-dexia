@@ -19,10 +19,12 @@ import re
 from typing import Any
 
 from ..api.llm_gateway import LLMGateway, get_gateway
+from ..ontology.actions import TOOL_TO_ACTION, ollama_tools
+from ..ontology.actions import to_api_call as _registry_to_api_call
 
 DEFAULT_MODEL = "qwen2.5:7b"  # consolidated live model (strong Korean + native tool use); see llm_gateway.ROUTING
 
-_KNOWN_TOOLS = {"deploy_drone", "recall_drone", "activate", "standby"}
+_KNOWN_TOOLS = set(TOOL_TO_ACTION)  # derived from the ActionType registry
 
 
 def _extract_tools_from_text(text: str) -> list[dict]:
@@ -40,53 +42,10 @@ def _extract_tools_from_text(text: str) -> list[dict]:
             recs.append({"tool": obj["name"], "kwargs": args if isinstance(args, dict) else {}})
     return recs
 
-# Tool schemas (OpenAI/Ollama function-calling format) — 1:1 with the FastAPI
-# control endpoints in dexia.api.sim_api.
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "deploy_drone",
-            "description": "Deploy a friendly strike/recon drone at local map coords (x, y) in metres. Use to mass forces or counter a detected threat.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "x": {"type": "number", "description": "local X [m]"},
-                    "y": {"type": "number", "description": "local Y [m]"},
-                },
-                "required": ["x", "y"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "recall_drone",
-            "description": "Recall (return-to-base) a friendly drone by its agent_id, e.g. when it is exposed to the enemy AA kill zone.",
-            "parameters": {
-                "type": "object",
-                "properties": {"agent_id": {"type": "string"}},
-                "required": ["agent_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "activate",
-            "description": "ARM the scenario: launch all staged drones (they take off under physics) and bring the engagement live.",
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "standby",
-            "description": "DISARM: freeze drones in place and hold fire (de-escalate).",
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-]
+# Tool schemas (OpenAI/Ollama function-calling format) — generated from the
+# single ActionType registry so the agent's tools can never drift from the
+# governed control endpoints (dexia.ontology.actions / dexia.api.sim_api).
+TOOLS = ollama_tools()
 
 SYSTEM_PROMPT = (
     "너는 Dexia 전장 시뮬레이터의 AI 전술 참모(AI Staff)다. "
@@ -214,14 +173,7 @@ class TacticalAgent:
     # ----- Phase-D hook: execute an approved recommendation via the API ----- #
     @staticmethod
     def to_api_call(rec: dict) -> dict:
-        """Map a COA recommendation to a control-API call (for after approval)."""
-        tool = rec.get("tool")
-        kw = rec.get("kwargs", {})
-        mapping = {
-            "deploy_drone": ("POST", "/api/sim/deploy", {"x": kw.get("x"), "y": kw.get("y")}),
-            "recall_drone": ("POST", "/api/sim/recall", {"agent_id": kw.get("agent_id")}),
-            "activate": ("POST", "/api/sim/activate", {}),
-            "standby": ("POST", "/api/sim/standby", {}),
-        }
-        method, path, body = mapping.get(tool, ("POST", "/api/sim/standby", {}))
-        return {"method": method, "path": path, "body": body}
+        """Map a COA recommendation to its governed control-API call (after
+        approval). Derived from the single ActionType registry so the tool the
+        agent proposed and the endpoint the HUD calls are guaranteed in sync."""
+        return _registry_to_api_call(rec)

@@ -120,6 +120,12 @@ def _require_target(registry, agent_id, payload) -> None:
         raise ActionRejected("requires target [x,y] or target_id")
 
 
+def _require_route(registry, agent_id, payload) -> None:
+    p = payload or {}
+    if not ((p.get("asset_id") or agent_id) and p.get("route")):
+        raise ActionRejected("requires asset_id and a non-empty route")
+
+
 # --------------------------------------------------------------------------- #
 # Side effects — canonical action -> command-queue dict (drained by the streamer)
 # --------------------------------------------------------------------------- #
@@ -147,6 +153,11 @@ def _fire_cmd(p):
 def _isr_cmd(p):
     return {"action": "isr", "asset_id": p.get("asset_id"),
             "x": p.get("x"), "y": p.get("y"), "r": p.get("radius", 1000)}
+
+
+def _recon_cmd(p):
+    return {"action": "recon_route", "asset_id": p.get("asset_id"),
+            "route": p.get("route") or [], "orbit": p.get("orbit"), "alt": p.get("alt")}
 
 
 def _jam_cmd(p):
@@ -245,6 +256,20 @@ ACTION_REGISTRY: dict[str, ActionType] = {
         },
         validate=_require_xy,
         side_effect=_isr_cmd,
+    ),
+    "recon_route": ActionType(
+        name="recon_route", required_clearance="operator", tool_name="recon_route",
+        description="Fly an ISR/recon asset along a planned multi-waypoint route over an "
+                    "unknown/unconfirmed area, then loiter (orbit) to hold coverage. The route "
+                    "is planned from terrain by the staff, not hand-authored. asset_id = the ISR "
+                    "platform; route = [[x,y],...] waypoints; orbit = {center:[x,y], r, alt}.",
+        params={
+            "asset_id": {"type": "string", "required": True, "desc": "ISR asset id"},
+            "route": {"type": "array", "required": True, "desc": "waypoints [[x,y],...]"},
+            "orbit": {"type": "object", "required": False, "desc": "loiter circle {center,r,alt}"},
+        },
+        validate=_require_route,
+        side_effect=_recon_cmd,
     ),
     "jam": ActionType(
         name="jam", required_clearance="operator", tool_name="jam",

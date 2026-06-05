@@ -56,18 +56,27 @@ export default function AIStaffCard() {
   async function approve(rec, idx) {
     const cmd = recToCommand(rec);
     if (!cmd) {
-      setDone((d) => ({ ...d, [idx]: 'rejected' }));
+      setDone((d) => ({ ...d, [idx]: { status: 'rejected' } }));
       return;
     }
     try {
-      await fetch('/api/command', {
+      // Routes through /api/command -> governed FastAPI funnel (clearance +
+      // ActionBus + SQLite lineage). The verdict comes back verbatim.
+      const r = await fetch('/api/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cmd),
       });
-      setDone((d) => ({ ...d, [idx]: 'approved' }));
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.ok !== false) {
+        setDone((d) => ({ ...d, [idx]: { status: 'approved', lineage: j.lineage_id, ungoverned: j.governed === false } }));
+      } else {
+        // 403 clearance / 409 governance reject — surface WHY in the card.
+        const reason = (j.detail && (j.detail.reason || j.detail)) || j.error || `HTTP ${r.status}`;
+        setDone((d) => ({ ...d, [idx]: { status: 'denied', detail: String(reason), lineage: j.detail?.lineage_id } }));
+      }
     } catch {
-      setErr('실행 명령 전송 실패');
+      setErr('실행 명령 전송 실패 (제어 평면 미연결)');
     }
   }
 
@@ -116,13 +125,18 @@ export default function AIStaffCard() {
                 )}
               </span>
               {done[i] ? (
-                <span style={{ ...S.badge, color: done[i] === 'approved' ? '#52c41a' : '#ff7875' }}>
-                  {done[i] === 'approved' ? '✓ 승인·실행' : '✕ 거절'}
+                <span style={{ ...S.badge, color: done[i].status === 'approved' ? '#52c41a' : done[i].status === 'denied' ? '#ffb347' : '#ff7875' }}
+                      title={done[i].detail || ''}>
+                  {done[i].status === 'approved'
+                    ? `✓ 승인·실행${done[i].lineage != null ? ` · #${done[i].lineage}` : ''}${done[i].ungoverned ? ' ⚠비거버넌스' : ''}`
+                    : done[i].status === 'denied'
+                    ? `⛔ 거버넌스 거부${done[i].detail ? `: ${done[i].detail}` : ''}`
+                    : '✕ 거절'}
                 </span>
               ) : (
                 <span style={S.btns}>
                   <button style={S.approve} onClick={() => approve(rec, i)}>승인</button>
-                  <button style={S.reject} onClick={() => setDone((d) => ({ ...d, [i]: 'rejected' }))}>거절</button>
+                  <button style={S.reject} onClick={() => setDone((d) => ({ ...d, [i]: { status: 'rejected' } }))}>거절</button>
                 </span>
               )}
             </div>

@@ -73,7 +73,13 @@ services:
     environment:
       - SIM_API_URL=http://dexia-api:8000
       - TELEMETRY_PATH=/host/telemetry.json
+      - DRONE_COMMANDS_PATH=/host/commands.json
+      - AIP_DIR=/host/dexia/aip
+      - RECIPES_PATH=/host/dexia/aip/recipes.json
+      - PENDING_PROPOSALS_PATH=/host/dexia/aip/pending_proposals.json
+      - DRONE_PROFILES_PATH=/host/drone_profiles.json
+      - REDIS_URL=redis://redis:6379
     volumes:
-      - ".:/host:ro"        # read the shared telemetry snapshot
+      - ".:/host"        # read/write the shared telemetry and GCS state
     depends_on: [dexia-api]
     restart: unless-stopped

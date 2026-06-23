@@ -49,3 +49,9 @@ battlefield_tables.json
 *.tmp
 .DS_Store
 Thumbs.db
+
+# AI assistant tooling (kept local, not published)
+.claude/
+CLAUDE.md
+AGENTS.md
+

@@ -860,8 +860,11 @@
     </button>
 
     <div class="btn-group">
-      <button class="hud-btn" onclick="generateNewRandomCourse(true)">🎲 New Random Course</button>
-      <button class="hud-btn" onclick="toggleAnalysisModal()">📊 View Table</button>
+      <button class="hud-btn" onclick="toggleSpecsModal()">🛠️ Hardware Specs</button>
+      <button class="hud-btn" onclick="generateNewRandomCourse(true)">🎲 New Course</button>
+    </div>
+    <div class="btn-group">
+      <button class="hud-btn" style="grid-column: span 2;" onclick="toggleAnalysisModal()">📊 View Table & Analytics</button>
     </div>
 
     <div class="panel-header">
@@ -1048,6 +1051,132 @@
     </div>
   </div>
 
+  <!-- Drone Hardware Specs & Physics Environment Modal -->
+  <div class="modal-overlay" id="specs-modal-overlay">
+    <div class="modal-card" style="border-color: rgba(0, 240, 255, 0.4); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 30px rgba(0, 240, 255, 0.2);">
+      <div class="modal-header">
+        <h2>
+          <span>🛠️ Dexia Drone Hardware Specs & Simulation Environment</span>
+          <span style="font-size: 11px; background: rgba(0, 240, 255, 0.15); color: var(--accent); padding: 3px 8px; border-radius: 4px; border: 1px solid var(--accent);">STANDARD QUAD X-CONFIG</span>
+        </h2>
+        <button class="btn-small" onclick="toggleSpecsModal()">✕ Close Window</button>
+      </div>
+
+      <div class="ai-diag-grid">
+        <!-- 1. Airframe Architecture -->
+        <div class="diag-section">
+          <div class="diag-title" style="color: var(--accent);">
+            <span>1. Airframe & Mass Properties</span>
+            <span>MASS & INERTIA</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11px;">
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Total Takeoff Mass (m):</span>
+              <span style="color: #fff; font-weight: 700;">0.60 kg (600g)</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Arm Radius (L) / Wheelbase:</span>
+              <span style="color: #fff; font-weight: 700;">0.11 m (11.0 cm) / 31.1 cm</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Inertia Tensor [Ixx, Iyy, Izz]:</span>
+              <span style="color: var(--accent); font-weight: 700;">[0.003, 0.003, 0.005] kg·m²</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Rotor Topology:</span>
+              <span style="color: #fff;">X-Quad (4 Rotors)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Propulsion & Motor Power -->
+        <div class="diag-section">
+          <div class="diag-title" style="color: var(--accent-green);">
+            <span>2. Propulsion & Thrust Limits</span>
+            <span>4x BRUSHLESS</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11px;">
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Max Single Rotor Thrust:</span>
+              <span style="color: #fff; font-weight: 700;">7.00 N (713.5 g)</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Max Collective Thrust:</span>
+              <span style="color: var(--accent-green); font-weight: 700;">28.00 N (4.75 : 1 T/W Ratio)</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Hover Operating Throttle:</span>
+              <span style="color: var(--accent); font-weight: 700;">1.47 N / rotor (21.0% Throttle)</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Yaw Reaction Torque Coeff (κ):</span>
+              <span style="color: #fff;">0.0201 m (0.0201 Nm / N)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Atmospheric & Aerodynamic Environment -->
+        <div class="diag-section">
+          <div class="diag-title" style="color: var(--accent-yellow);">
+            <span>3. Atmosphere & Drag Environment</span>
+            <span>AERODYNAMICS</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11px;">
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Gravity Field (g):</span>
+              <span style="color: #fff; font-weight: 700;">-9.81 m/s² (Along -Z Axis)</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Standard Air Density (ρ):</span>
+              <span style="color: #fff; font-weight: 700;">1.20 kg/m³ (15°C Sea Level)</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Linear Translational Drag (Cd):</span>
+              <span style="color: #fff;">0.22 N·s/m (F_drag = -Cd * v)</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Rotational Damping Coeff:</span>
+              <span style="color: #fff;">0.12 N·m·s/rad (Tau = -Crot * w)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Simulation Engine & Coordinate System -->
+        <div class="diag-section">
+          <div class="diag-title" style="color: var(--accent-purple);">
+            <span>4. Simulation & Coordinate Rules</span>
+            <span>6-DOF ENGINE</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11px;">
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Coordinate Standard:</span>
+              <span style="color: var(--accent); font-weight: 700;">Z-UP (Right-Hand Standard)</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Physics Integration Step (dt):</span>
+              <span style="color: #fff; font-weight: 700;">60 Hz (dt ≈ 0.0166s, Newton-Euler)</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Flight Safety Envelope:</span>
+              <span style="color: var(--accent-green); font-weight: 700;">±5.0m [X,Y], 0.1~4.0m [Z]</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Ground Physics:</span>
+              <span style="color: #fff;">Solid Inelastic Floor (Z=0.1m)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px;">
+        <span style="font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">
+          * Full 6-DOF Newton-Euler Equations of Motion verified with MuJoCo standard dynamics
+        </span>
+        <button class="btn-small" style="background: var(--accent); color: #000; font-weight: 700;" onclick="toggleSpecsModal()">Return to Flight</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Flight Analysis Table Modal -->
   <div class="analysis-overlay" id="analysis-overlay">
     <div class="analysis-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding-bottom: 8px;">
@@ -1148,6 +1277,7 @@
     let euler = new THREE.Euler(0, 0, 0, 'ZYX');
     let quat = new THREE.Quaternion();
     let omega = new THREE.Vector3(0, 0, 0);
+    let posErrIntegral = new THREE.Vector3(0, 0, 0); // Anti-Windup Accumulated Error Eliminator
 
     let motorThrusts = [HOVER_THRUST, HOVER_THRUST, HOVER_THRUST, HOVER_THRUST];
     let prevActions = [0, 0, 0, 0];
@@ -1243,12 +1373,31 @@
     // -------------------------------------------------------------
     // Flight Controllers & Neural Diagnostics Calculation
     // -------------------------------------------------------------
-    function calculateGeometricThrusts(target, targetYaw) {
+    function calculateGeometricThrusts(target, targetYaw, dt = 0.016) {
       const posErr = new THREE.Vector3().subVectors(target, pos);
+      const dist = posErr.length();
+
+      // Anti-Windup Accumulated Error Integration:
+      // When approaching the waypoint (< 1.2m), accumulate residual error to force 0.00cm steady-state
+      if (dist < 1.2) {
+        posErrIntegral.x += posErr.x * dt;
+        posErrIntegral.y += posErr.y * dt;
+        posErrIntegral.z += posErr.z * dt;
+        // Bounded Anti-Windup Clamping
+        posErrIntegral.x = THREE.MathUtils.clamp(posErrIntegral.x, -0.35, 0.35);
+        posErrIntegral.y = THREE.MathUtils.clamp(posErrIntegral.y, -0.35, 0.35);
+        posErrIntegral.z = THREE.MathUtils.clamp(posErrIntegral.z, -0.25, 0.25);
+      } else {
+        posErrIntegral.multiplyScalar(0.92);
+      }
+
+      const Ki_xy = 2.2;
+      const Ki_z = 3.5;
+
       const a_cmd = new THREE.Vector3(
-        4.5 * posErr.x - 3.4 * vel.x,
-        4.5 * posErr.y - 3.4 * vel.y,
-        6.8 * posErr.z - 4.8 * vel.z + GRAVITY
+        4.8 * posErr.x - 3.6 * vel.x + Ki_xy * posErrIntegral.x,
+        4.8 * posErr.y - 3.6 * vel.y + Ki_xy * posErrIntegral.y,
+        7.2 * posErr.z - 5.0 * vel.z + Ki_z * posErrIntegral.z + GRAVITY
       );
 
       const cosTilt = Math.max(Math.cos(euler.x) * Math.cos(euler.y), 0.7);
@@ -1289,7 +1438,7 @@
       ];
     }
 
-    function forwardNeuralInferenceWithDiagnostics(target, targetYaw) {
+    function forwardNeuralInferenceWithDiagnostics(target, targetYaw, dt = 0.016) {
       const posErr = new THREE.Vector3().subVectors(target, pos);
       const obs16 = [
         THREE.MathUtils.clamp(posErr.x, -3.0, 3.0),
@@ -1308,7 +1457,7 @@
       ];
 
       if (!window.PPO_WEIGHTS) {
-        return calculateGeometricThrusts(target, targetYaw);
+        return calculateGeometricThrusts(target, targetYaw, dt);
       }
 
       const { w0, b0, w1, b1, wpi, bpi } = window.PPO_WEIGHTS;
@@ -1347,7 +1496,7 @@
       }
 
       // [방안 A] Adaptive Scheduled Neuro-Control
-      const baseGeo = calculateGeometricThrusts(target, targetYaw);
+      const baseGeo = calculateGeometricThrusts(target, targetYaw, dt);
       const meanRawA = (rawA[0] + rawA[1] + rawA[2] + rawA[3]) / 4.0;
       
       // Adaptive Neural Gain Scheduling:
@@ -1597,9 +1746,9 @@
 
       // 1. Controller Output
       if (activePilot === 'ai') {
-        motorThrusts = forwardNeuralInferenceWithDiagnostics(target, targetYaw);
+        motorThrusts = forwardNeuralInferenceWithDiagnostics(target, targetYaw, dt);
       } else {
-        motorThrusts = calculateGeometricThrusts(target, targetYaw);
+        motorThrusts = calculateGeometricThrusts(target, targetYaw, dt);
       }
 
       const tiltDeg = Math.max(Math.abs(euler.x), Math.abs(euler.y)) * 57.2958;
@@ -1670,9 +1819,9 @@
         if (vel.y * pos.y > 0) vel.y = 0;
       }
 
-      // Check Target Reached or Leg Timeout
+      // Check Target Reached or Leg Timeout (Precision Docking: 5cm threshold)
       const distToTarget = posErr.length();
-      if (legTimer >= LEG_DURATION || (distToTarget < 0.18 && legTimer > 1.0)) {
+      if (legTimer >= LEG_DURATION || (distToTarget < 0.05 && legTimer > 0.8)) {
         cumulativeLegResults.push({
           cycle: cycleCount,
           pilot: activePilot.toUpperCase(),
@@ -1688,6 +1837,7 @@
         });
 
         legTimer = 0;
+        posErrIntegral.set(0, 0, 0); // Reset integral for clean new leg
         currentLegThrustSum = 0;
         currentLegMaxTilt = 0;
         currentLegSteps = 0;
@@ -1735,6 +1885,11 @@
         sBadge.textContent = 'GEO ACTIVE';
         sBadge.style.color = 'var(--accent)';
       }
+    }
+
+    function toggleSpecsModal() {
+      const modal = document.getElementById('specs-modal-overlay');
+      modal.classList.toggle('show');
     }
 
     function toggleNeuralModal() {

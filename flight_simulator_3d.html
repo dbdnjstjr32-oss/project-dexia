@@ -1114,6 +1114,7 @@
         * Dexia 6-DOF High-Precision Flight Dynamics & Realtime Closed-Loop Controller
       </div>
       <div style="display: flex; gap: 8px;">
+        <button class="btn-small" style="background: rgba(255,51,102,0.15); border-color: var(--accent-red); color: var(--accent-red);" onclick="clearAnalysisTable()">🗑️ Clear Log</button>
         <button class="btn-small" onclick="exportCSV()">📥 Export CSV Log</button>
         <button class="btn-small" style="background: var(--accent); color: #000; font-weight: 700;" onclick="toggleAnalysisModal()">Continue Flight View</button>
       </div>
@@ -1345,16 +1346,20 @@
         rawA[i] = Math.min(Math.max(sum, -1.0), 1.0);
       }
 
-      prevActions = [...rawA];
-
+      // [방안 A] Adaptive Scheduled Neuro-Control
       const baseGeo = calculateGeometricThrusts(target, targetYaw);
-      const aiDelta = rawA.map(a => a * 0.8);
+      const meanRawA = (rawA[0] + rawA[1] + rawA[2] + rawA[3]) / 4.0;
+      
+      // Adaptive Neural Gain Scheduling:
+      // High authority during transit, smoothly transitions to precision lock near target
+      const dist = posErr.length();
+      const neuralAlpha = Math.min(Math.max((dist - 0.2) * 0.12, 0.0), 0.15);
 
       const finalThrusts = [
-        THREE.MathUtils.clamp(baseGeo[0] + aiDelta[0], 0, MAX_THRUST),
-        THREE.MathUtils.clamp(baseGeo[1] + aiDelta[1], 0, MAX_THRUST),
-        THREE.MathUtils.clamp(baseGeo[2] + aiDelta[2], 0, MAX_THRUST),
-        THREE.MathUtils.clamp(baseGeo[3] + aiDelta[3], 0, MAX_THRUST)
+        THREE.MathUtils.clamp(baseGeo[0] + (rawA[0] - meanRawA) * neuralAlpha, 0, MAX_THRUST),
+        THREE.MathUtils.clamp(baseGeo[1] + (rawA[1] - meanRawA) * neuralAlpha, 0, MAX_THRUST),
+        THREE.MathUtils.clamp(baseGeo[2] + (rawA[2] - meanRawA) * neuralAlpha, 0, MAX_THRUST),
+        THREE.MathUtils.clamp(baseGeo[3] + (rawA[3] - meanRawA) * neuralAlpha, 0, MAX_THRUST)
       ];
 
       // Update Diagnostics Cache
@@ -1651,13 +1656,19 @@
       vel.addScaledVector(accel, dt);
       pos.addScaledVector(vel, dt);
 
-      // Floor & Envelope Safety Clamp
+      // Floor & Envelope Safety Clamp with Inelastic Velocity Dissipation
       if (pos.z < 0.1) {
         pos.z = 0.1;
         if (vel.z < 0) vel.z = 0;
       }
-      pos.x = THREE.MathUtils.clamp(pos.x, -5.0, 5.0);
-      pos.y = THREE.MathUtils.clamp(pos.y, -5.0, 5.0);
+      if (Math.abs(pos.x) >= 5.0) {
+        pos.x = Math.sign(pos.x) * 5.0;
+        if (vel.x * pos.x > 0) vel.x = 0;
+      }
+      if (Math.abs(pos.y) >= 5.0) {
+        pos.y = Math.sign(pos.y) * 5.0;
+        if (vel.y * pos.y > 0) vel.y = 0;
+      }
 
       // Check Target Reached or Leg Timeout
       const distToTarget = posErr.length();
@@ -1713,7 +1724,7 @@
         bAI.className = 'btn-mode-switch active-ai';
         bGeo.className = 'btn-mode-switch';
         bBadge.className = 'badge badge-ai';
-        bBadge.textContent = '🤖 PPO NEURAL AI PILOT';
+        bBadge.textContent = '🤖 RESIDUAL NEURO-PILOT (하이브리드 지능 제어)';
         sBadge.textContent = 'AI ACTIVE';
         sBadge.style.color = 'var(--accent-purple)';
       } else {
@@ -1900,6 +1911,20 @@
         `;
         tbody.appendChild(tr);
       });
+    }
+
+    function clearAnalysisTable() {
+      cumulativeLegResults = [];
+      missionHistory = [];
+      buildAnalysisTable();
+      document.getElementById('kpi-cycle-id').textContent = '0 Cycles (0 Legs)';
+      document.getElementById('kpi-total-time').textContent = 'Total: 0.0s';
+      document.getElementById('kpi-rmse').textContent = '0.00 cm';
+      document.getElementById('kpi-max-speed').textContent = '0.00 m/s';
+      document.getElementById('kpi-avg-speed').textContent = 'Avg: 0.00 m/s';
+      document.getElementById('kpi-max-tilt').textContent = '0.0°';
+      document.getElementById('kpi-power').textContent = '0.00 N';
+      document.getElementById('analysis-table-body').innerHTML = '<tr><td colspan="10" style="text-align:center; color:var(--text-muted); padding:20px;">로그가 초기화되었습니다. 비행이 진행되면 실시간으로 기록됩니다.</td></tr>';
     }
 
     function toggleAnalysisModal() {

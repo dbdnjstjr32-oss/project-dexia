@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DEXIA 6-DOF Acrobatic Flip Arena (Backflip & Frontflip Training)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Pretendard:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #07090e;
+      --card-bg: rgba(13, 17, 26, 0.94);
+      --border: rgba(255, 255, 255, 0.12);
+      --accent: #00f0ff;
+      --accent-green: #00ff88;
+      --accent-red: #ff3366;
+      --accent-yellow: #ffbb00;
+      --accent-purple: #c084fc;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Pretendard', sans-serif;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+      cursor: grab;
+    }
+
+    #canvas-container:active {
+      cursor: grabbing;
+    }
+
+    /* Top HUD */
+    .top-hud {
+      position: absolute;
+      top: 16px;
+      left: 20px;
+      right: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .hud-title {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      padding: 10px 20px;
+      border-radius: 8px;
+      pointer-events: auto;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    .hud-title h1 {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge-flip {
+      background: linear-gradient(135deg, rgba(255, 51, 102, 0.25), rgba(192, 132, 252, 0.4));
+      color: #ff3366;
+      border: 1px solid #ff3366;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 800;
+      box-shadow: 0 0 12px rgba(255, 51, 102, 0.4);
+    }
+
+    .hud-title p {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Navigation Bar */
+    .nav-bar {
+      display: flex;
+      gap: 8px;
+      pointer-events: auto;
+    }
+
+    .nav-btn {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: 'Pretendard', sans-serif;
+      transition: all 0.2s;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    .nav-btn:hover {
+      background: rgba(0, 240, 255, 0.2);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    /* Left Control Panel */
+    .controls-panel {
+      position: absolute;
+      top: 85px;
+      left: 20px;
+      width: 330px;
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    .panel-header {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--accent-red);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 5px;
+    }
+
+    /* Action Trigger Buttons */
+    .flip-btn-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .btn-trigger-flip {
+      border: 1px solid transparent;
+      padding: 12px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      font-family: 'Pretendard', sans-serif;
+      text-align: center;
+      transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    }
+
+    .btn-backflip {
+      background: linear-gradient(135deg, rgba(255, 51, 102, 0.3), rgba(192, 132, 252, 0.4));
+      border-color: var(--accent-red);
+      color: #fff;
+    }
+
+    .btn-backflip:hover {
+      background: linear-gradient(135deg, #ff3366, #c084fc);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(255, 51, 102, 0.6);
+    }
+
+    .btn-frontflip {
+      background: linear-gradient(135deg, rgba(0, 240, 255, 0.25), rgba(0, 255, 136, 0.35));
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .btn-frontflip:hover {
+      background: linear-gradient(135deg, #00f0ff, #00ff88);
+      color: #000;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 240, 255, 0.6);
+    }
+
+    .btn-auto-training {
+      background: linear-gradient(135deg, rgba(255, 187, 0, 0.2), rgba(255, 100, 0, 0.3));
+      border: 1px solid var(--accent-yellow);
+      color: var(--accent-yellow);
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: 'Pretendard', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .btn-auto-training:hover {
+      background: var(--accent-yellow);
+      color: #000;
+    }
+
+    .btn-auto-training.active {
+      background: linear-gradient(135deg, #ffbb00, #ff6600);
+      color: #000;
+      box-shadow: 0 0 16px rgba(255, 187, 0, 0.6);
+    }
+
+    /* Flip State Box */
+    .flip-status-box {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 51, 102, 0.3);
+      border-radius: 6px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .status-line {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+    }
+
+    /* Speed / Sim Rate Control */
+    .speed-control-box {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .btn-speed {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 6px;
+      border-radius: 5px;
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: 'JetBrains Mono', monospace;
+      text-align: center;
+      transition: all 0.2s;
+    }
+
+    .btn-speed.active {
+      background: var(--accent);
+      color: #000;
+      border-color: var(--accent);
+    }
+
+    /* Telemetry Right Panel */
+    .telemetry-panel {
+      position: absolute;
+      top: 85px;
+      right: 20px;
+      width: 310px;
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .tele-item {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .tele-label {
+      font-size: 9px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+
+    .tele-val {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      margin-top: 2px;
+    }
+
+    /* Flip Progress Wheel / Gauge */
+    .pitch-gauge-card {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .pitch-degree-text {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--accent-red);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Motors */
+    .motors-container {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-top: 2px;
+    }
+
+    .motor-meter {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .motor-bar-bg {
+      width: 100%;
+      height: 48px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: flex-end;
+    }
+
+    .motor-bar-fill {
+      width: 100%;
+      background: var(--accent-red);
+      transition: height 0.04s linear;
+    }
+
+    .motor-name {
+      font-size: 9px;
+      color: var(--text-muted);
+    }
+
+    .motor-val {
+      font-size: 9px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* Flash Overlay for 360 Flip Complete */
+    .flip-flash-banner {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.8);
+      background: rgba(13, 18, 30, 0.95);
+      border: 2px solid #ff3366;
+      box-shadow: 0 0 50px rgba(255, 51, 102, 0.8);
+      border-radius: 12px;
+      padding: 18px 36px;
+      font-size: 22px;
+      font-weight: 800;
+      color: #fff;
+      font-family: 'Pretendard', sans-serif;
+      text-align: center;
+      z-index: 50;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .flip-flash-banner.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1.0);
+    }
+  </style>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+
+  <!-- Top HUD -->
+  <div class="top-hud">
+    <div class="hud-title">
+      <h1>
+        DEXIA ACROBATIC FLIGHT ARENA
+        <span class="badge-flip">🤸 360° FLIP TRAINING ROOM</span>
+      </h1>
+      <p>Continuous Newton-Euler 6-DOF Acrobatic Dynamics · Pitch Torque Inversion · Autonomous Recovery</p>
+    </div>
+
+    <!-- Navigation -->
+    <div class="nav-bar">
+      <a class="nav-btn" href="flight_simulator_3d.html">
+        <span>🌐 Return to 6-DOF Navigation Room</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Left Control Panel -->
+  <div class="controls-panel">
+    <div class="panel-header">
+      <span>Acrobatic Maneuver Triggers</span>
+      <span id="flip-phase-badge" style="color: var(--accent-green); font-size: 10px;">HOVER READY</span>
+    </div>
+
+    <!-- Trigger Flip Buttons -->
+    <div class="flip-btn-grid">
+      <button class="btn-trigger-flip btn-backflip" onclick="triggerManeuver('BACKFLIP')">
+        <span style="font-size: 18px;">🔄</span>
+        <span>BACKFLIP</span>
+        <span style="font-size: 9px; opacity: 0.8;">+360° Pitch (뒤공중제비)</span>
+      </button>
+      <button class="btn-trigger-flip btn-frontflip" onclick="triggerManeuver('FRONTFLIP')">
+        <span style="font-size: 18px;">🔃</span>
+        <span>FRONTFLIP</span>
+        <span style="font-size: 9px; opacity: 0.8;">-360° Pitch (앞공중제비)</span>
+      </button>
+    </div>
+
+    <!-- Autonomous Continuous Training -->
+    <button class="btn-auto-training" id="btn-auto-flip" onclick="toggleAutoFlipTraining()">
+      <span>🤖 Autonomous Continuous Flip Training: OFF</span>
+    </button>
+
+    <div class="flip-status-box">
+      <div class="status-line">
+        <span style="color: var(--text-muted)">Current Phase:</span>
+        <span id="txt-flip-phase" style="color: var(--accent-green); font-weight:700;">1. Ready (Hovering)</span>
+      </div>
+      <div class="status-line">
+        <span style="color: var(--text-muted)">Pitch Rate (ωy):</span>
+        <span id="txt-pitch-rate" style="color: #fff; font-weight:700;">0.0 rad/s (0.0°/s)</span>
+      </div>
+      <div class="status-line">
+        <span style="color: var(--text-muted)">Accumulated Rotation:</span>
+        <span id="txt-accum-rot" style="color: var(--accent-red); font-weight:700;">0.0° / 360.0°</span>
+      </div>
+      <div class="status-line">
+        <span style="color: var(--text-muted)">Last Flip Duration:</span>
+        <span id="txt-last-duration" style="color: var(--accent-yellow); font-weight:700;">0.00 s</span>
+      </div>
+      <div class="status-line">
+        <span style="color: var(--text-muted)">Altitude Loss (ΔZ):</span>
+        <span id="txt-alt-loss" style="color: var(--accent-purple); font-weight:700;">0.00 m</span>
+      </div>
+    </div>
+
+    <div class="panel-header">
+      <span>Simulation Time Scale</span>
+      <span id="txt-time-scale" style="font-size: 10px; color: var(--accent);">1.0x (Realtime)</span>
+    </div>
+    <div class="speed-control-box">
+      <button class="btn-speed" id="spd-03" onclick="setTimeScale(0.35)">0.35x (Slow-Mo)</button>
+      <button class="btn-speed active" id="spd-10" onclick="setTimeScale(1.0)">1.0x (Realtime)</button>
+      <button class="btn-speed" id="spd-20" onclick="setTimeScale(2.0)">2.0x (Fast)</button>
+    </div>
+
+    <button class="btn-speed" style="padding: 8px; font-weight: 700; color: #fff; border-color: var(--border);" onclick="resetDroneHover()">
+      🔄 Reset to Center Hover (Z=2.2m)
+    </button>
+  </div>
+
+  <!-- Telemetry Right Panel -->
+  <div class="telemetry-panel">
+    <div class="panel-header">
+      <span>Realtime Acrobatic State</span>
+      <span id="txt-total-flips" style="color: var(--accent-red); font-size: 10px;">0 FLIPS</span>
+    </div>
+
+    <!-- Pitch Angle Dial Card -->
+    <div class="pitch-gauge-card">
+      <span style="font-size: 9px; color: var(--text-muted); text-transform: uppercase;">Current Pitch Angle (θ)</span>
+      <div class="pitch-degree-text" id="val-pitch-big">0.0°</div>
+      <span id="val-pitch-status" style="font-size: 10px; color: var(--accent-green);">UPRIGHT (Normal Flight)</span>
+    </div>
+
+    <div class="telemetry-grid">
+      <div class="tele-item">
+        <div class="tele-label">Altitude (Z)</div>
+        <div class="tele-val" id="val-alt">2.20 m</div>
+      </div>
+      <div class="tele-item">
+        <div class="tele-label">Vertical Vel (Vz)</div>
+        <div class="tele-val" id="val-vz">0.00 m/s</div>
+      </div>
+      <div class="tele-item">
+        <div class="tele-label">Position [X, Y]</div>
+        <div class="tele-val" id="val-pos">0.0, 0.0</div>
+      </div>
+      <div class="tele-item">
+        <div class="tele-label">Roll Angle</div>
+        <div class="tele-val" id="val-roll">0.0°</div>
+      </div>
+    </div>
+
+    <div class="panel-header">
+      <span>Motor Differential Thrusts</span>
+      <span id="val-total-thrust" style="color: var(--accent)">5.88 N</span>
+    </div>
+
+    <div class="motors-container">
+      <div class="motor-meter">
+        <div class="motor-bar-bg"><div class="motor-bar-fill" id="m0-fill" style="height: 21%;"></div></div>
+        <div class="motor-name">M0 FR</div>
+        <div class="motor-val" id="m0-val">1.47N</div>
+      </div>
+      <div class="motor-meter">
+        <div class="motor-bar-bg"><div class="motor-bar-fill" id="m1-fill" style="height: 21%;"></div></div>
+        <div class="motor-name">M1 FL</div>
+        <div class="motor-val" id="m1-val">1.47N</div>
+      </div>
+      <div class="motor-meter">
+        <div class="motor-bar-bg"><div class="motor-bar-fill" id="m2-fill" style="height: 21%;"></div></div>
+        <div class="motor-name">M2 BL</div>
+        <div class="motor-val" id="m2-val">1.47N</div>
+      </div>
+      <div class="motor-meter">
+        <div class="motor-bar-bg"><div class="motor-bar-fill" id="m3-fill" style="height: 21%;"></div></div>
+        <div class="motor-name">M3 BR</div>
+        <div class="motor-val" id="m3-val">1.47N</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Flash Banner on 360 Flip Reached -->
+  <div class="flip-flash-banner" id="flip-banner">
+    ✨ 360° BACKFLIP PERFECTLY COMPLETED! ✨
+  </div>
+
+  <div id="canvas-container"></div>
+
+  <script>
+    // -------------------------------------------------------------
+    // Physical Constants (Standard Quad: 0.6kg, 0.11m arm)
+    // -------------------------------------------------------------
+    const MASS = 0.6;
+    const GRAVITY = 9.81;
+    const ARM_LENGTH = 0.11;
+    const MAX_THRUST = 7.0;
+    const KAPPA = 0.0201;
+    const DRAG_COEFF = 0.18;
+    const ROT_DAMP_COEFF = 0.08;
+    const HOVER_THRUST = (MASS * GRAVITY) / 4.0; // 1.4715 N
+
+    function wrapAngle(rad) {
+      rad = (rad + Math.PI) % (2 * Math.PI);
+      if (rad < 0) rad += 2 * Math.PI;
+      return rad - Math.PI;
+    }
+
+    // 6-DOF Drone Physical State
+    let pos = new THREE.Vector3(0, 0, 2.2);
+    let prevPos = pos.clone();
+    let vel = new THREE.Vector3(0, 0, 0);
+    let euler = new THREE.Euler(0, 0, 0, 'ZYX');
+    let quat = new THREE.Quaternion();
+    let omega = new THREE.Vector3(0, 0, 0);
+
+    let motorThrusts = [HOVER_THRUST, HOVER_THRUST, HOVER_THRUST, HOVER_THRUST];
+    let timeScale = 1.0;
+    let totalFlipsCompleted = 0;
+
+    // -------------------------------------------------------------
+    // Acrobatic Flip Finite State Machine (FSM)
+    // -------------------------------------------------------------
+    // Phases: IDLE -> POP_UP -> TORQUE_PULSE -> INVERTED_COAST -> BRAKE_CATCH -> STABILIZE
+    let maneuverState = 'IDLE';
+    let maneuverType = 'BACKFLIP'; // 'BACKFLIP' (+pitch) or 'FRONTFLIP' (-pitch)
+    let maneuverTimer = 0;
+    let startAltitude = 2.2;
+    let accumulatedPitchRot = 0;
+    let lastPitchAngle = 0;
+    let autoTrainingEnabled = false;
+    let autoTrainingCooldown = 0;
+
+    function triggerManeuver(type) {
+      if (maneuverState !== 'IDLE') return; // already in motion
+      maneuverType = type;
+      maneuverState = 'POP_UP';
+      maneuverTimer = 0;
+      startAltitude = pos.z;
+      accumulatedPitchRot = 0;
+      lastPitchAngle = euler.y;
+
+      document.getElementById('txt-flip-phase').textContent = `2. Pop-Up Climb (${type})`;
+      document.getElementById('txt-flip-phase').style.color = 'var(--accent-yellow)';
+      document.getElementById('flip-phase-badge').textContent = 'POP-UP';
+      document.getElementById('flip-phase-badge').style.color = 'var(--accent-yellow)';
+    }
+
+    function toggleAutoFlipTraining() {
+      autoTrainingEnabled = !autoTrainingEnabled;
+      const btn = document.getElementById('btn-auto-flip');
+      if (autoTrainingEnabled) {
+        btn.className = 'btn-auto-training active';
+        btn.textContent = '🤖 Autonomous Continuous Flip Training: ACTIVE';
+        autoTrainingCooldown = 1.0;
+      } else {
+        btn.className = 'btn-auto-training';
+        btn.textContent = '🤖 Autonomous Continuous Flip Training: OFF';
+      }
+    }
+
+    function resetDroneHover() {
+      pos.set(0, 0, 2.2);
+      prevPos.copy(pos);
+      vel.set(0, 0, 0);
+      euler.set(0, 0, 0);
+      quat.setFromEuler(euler);
+      omega.set(0, 0, 0);
+      motorThrusts = [HOVER_THRUST, HOVER_THRUST, HOVER_THRUST, HOVER_THRUST];
+      maneuverState = 'IDLE';
+      accumulatedPitchRot = 0;
+      document.getElementById('txt-flip-phase').textContent = '1. Ready (Hovering)';
+      document.getElementById('txt-flip-phase').style.color = 'var(--accent-green)';
+      document.getElementById('flip-phase-badge').textContent = 'HOVER READY';
+      document.getElementById('flip-phase-badge').style.color = 'var(--accent-green)';
+    }
+
+    // -------------------------------------------------------------
+    // Acrobatic Controller Logic
+    // -------------------------------------------------------------
+    function calculateAcrobaticThrusts(dt) {
+      maneuverTimer += dt;
+
+      // Track true continuous accumulated pitch rotation
+      const dPitch = wrapAngle(euler.y - lastPitchAngle);
+      accumulatedPitchRot += Math.abs(dPitch);
+      lastPitchAngle = euler.y;
+
+      const directionSign = maneuverType === 'BACKFLIP' ? 1.0 : -1.0;
+
+      if (maneuverState === 'IDLE') {
+        // High-Precision Center Hover Stabilization
+        const targetPos = new THREE.Vector3(0, 0, 2.2);
+        const posErr = new THREE.Vector3().subVectors(targetPos, pos);
+
+        const a_cmd = new THREE.Vector3(
+          4.5 * posErr.x - 3.2 * vel.x,
+          4.5 * posErr.y - 3.2 * vel.y,
+          6.5 * posErr.z - 4.5 * vel.z + GRAVITY
+        );
+
+        const cosTilt = Math.max(Math.cos(euler.x) * Math.cos(euler.y), 0.7);
+        const thrustTotal = Math.min(Math.max((MASS * a_cmd.z) / cosTilt, 0.5), 4 * MAX_THRUST * 0.75);
+
+        const eRoll = -euler.x;
+        const ePitch = -euler.y;
+        const eYaw = -euler.z;
+
+        const tau_x = 12.0 * eRoll - 2.0 * omega.x;
+        const tau_y = 12.0 * ePitch - 2.0 * omega.y;
+        const tau_z = 5.0 * eYaw - 1.0 * omega.z;
+
+        const tBase = thrustTotal / 4.0;
+        const dt_x = THREE.MathUtils.clamp(tau_x / (4.0 * ARM_LENGTH), -0.5 * tBase, 0.5 * tBase);
+        const dt_y = THREE.MathUtils.clamp(tau_y / (4.0 * ARM_LENGTH), -0.5 * tBase, 0.5 * tBase);
+        const dt_z = THREE.MathUtils.clamp(tau_z / (4.0 * KAPPA), -0.2 * tBase, 0.2 * tBase);
+
+        return [
+          THREE.MathUtils.clamp(tBase + dt_x - dt_y + dt_z, 0, MAX_THRUST),
+          THREE.MathUtils.clamp(tBase + dt_x + dt_y - dt_z, 0, MAX_THRUST),
+          THREE.MathUtils.clamp(tBase - dt_x + dt_y + dt_z, 0, MAX_THRUST),
+          THREE.MathUtils.clamp(tBase - dt_x - dt_y - dt_z, 0, MAX_THRUST)
+        ];
+      }
+
+      else if (maneuverState === 'POP_UP') {
+        // Phase 1: Boost altitude vertically for 0.18s
+        if (maneuverTimer < 0.18) {
+          return [5.5, 5.5, 5.5, 5.5]; // Pop-up climb
+        } else {
+          maneuverState = 'TORQUE_PULSE';
+          document.getElementById('txt-flip-phase').textContent = `3. Pitch Torque Inversion (${directionSign > 0 ? '+Pitch' : '-Pitch'})`;
+          document.getElementById('txt-flip-phase').style.color = 'var(--accent-red)';
+          document.getElementById('flip-phase-badge').textContent = 'ROTATING';
+          document.getElementById('flip-phase-badge').style.color = 'var(--accent-red)';
+        }
+      }
+
+      if (maneuverState === 'TORQUE_PULSE') {
+        // Phase 2: Apply massive differential pitch torque
+        if (accumulatedPitchRot < (Math.PI * 0.75)) { // 0° ~ 135°
+          if (maneuverType === 'BACKFLIP') {
+            // Front motors MAX, Back motors CUT
+            return [6.8, 6.8, 0.3, 0.3];
+          } else {
+            // Back motors MAX, Front motors CUT
+            return [0.3, 0.3, 6.8, 6.8];
+          }
+        } else {
+          maneuverState = 'INVERTED_COAST';
+          document.getElementById('txt-flip-phase').textContent = '4. Inverted Zero-G Coasting (180°)';
+          document.getElementById('txt-flip-phase').style.color = 'var(--accent-purple)';
+        }
+      }
+
+      if (maneuverState === 'INVERTED_COAST') {
+        // Phase 3: Coast through inverted 180° with zero thrust (prevents downward acceleration)
+        if (accumulatedPitchRot < (Math.PI * 1.45)) { // 135° ~ 260°
+          return [0.2, 0.2, 0.2, 0.2]; // cut throttle while upside down
+        } else {
+          maneuverState = 'BRAKE_CATCH';
+          document.getElementById('txt-flip-phase').textContent = '5. Counter-Torque Brake & Catch (300°+)';
+          document.getElementById('txt-flip-phase').style.color = 'var(--accent-yellow)';
+        }
+      }
+
+      if (maneuverState === 'BRAKE_CATCH') {
+        // Phase 4: Counter-torque to rapidly brake pitch rate as it approaches 360°
+        if (accumulatedPitchRot < (Math.PI * 1.88) && Math.abs(omega.y) > 2.0) {
+          if (maneuverType === 'BACKFLIP') {
+            // Reverse torque: Back motors boost, Front motors low
+            return [0.8, 0.8, 5.8, 5.8];
+          } else {
+            // Reverse torque: Front motors boost, Back motors low
+            return [5.8, 5.8, 0.8, 0.8];
+          }
+        } else {
+          maneuverState = 'STABILIZE';
+          showFlipCompletionBanner(maneuverType, maneuverTimer, startAltitude - pos.z);
+          totalFlipsCompleted++;
+          document.getElementById('txt-total-flips').textContent = `${totalFlipsCompleted} FLIPS`;
+          document.getElementById('txt-last-duration').textContent = maneuverTimer.toFixed(2) + ' s';
+          document.getElementById('txt-alt-loss').textContent = Math.max(startAltitude - pos.z, 0).toFixed(2) + ' m';
+          document.getElementById('txt-flip-phase').textContent = '6. Level Recovery & Altitude Catch';
+          document.getElementById('txt-flip-phase').style.color = 'var(--accent-green)';
+        }
+      }
+
+      if (maneuverState === 'STABILIZE') {
+        // Phase 5: High-gain Leveling & Altitude Re-acquisition
+        if (maneuverTimer < 1.4) {
+          const eRoll = -euler.x;
+          const ePitch = -euler.y;
+          const eYaw = -euler.z;
+          const tau_x = 18.0 * eRoll - 3.0 * omega.x;
+          const tau_y = 18.0 * ePitch - 3.0 * omega.y;
+          const tau_z = 6.0 * eYaw - 1.2 * omega.z;
+
+          const zErr = 2.2 - pos.z;
+          const totalT = THREE.MathUtils.clamp(MASS * (GRAVITY + 6.0 * zErr - 4.5 * vel.z), 1.0, 24.0);
+          const tBase = totalT / 4.0;
+
+          const dt_x = tau_x / (4.0 * ARM_LENGTH);
+          const dt_y = tau_y / (4.0 * ARM_LENGTH);
+          const dt_z = tau_z / (4.0 * KAPPA);
+
+          return [
+            THREE.MathUtils.clamp(tBase + dt_x - dt_y + dt_z, 0, MAX_THRUST),
+            THREE.MathUtils.clamp(tBase + dt_x + dt_y - dt_z, 0, MAX_THRUST),
+            THREE.MathUtils.clamp(tBase - dt_x + dt_y + dt_z, 0, MAX_THRUST),
+            THREE.MathUtils.clamp(tBase - dt_x - dt_y - dt_z, 0, MAX_THRUST)
+          ];
+        } else {
+          // Completed
+          maneuverState = 'IDLE';
+          document.getElementById('txt-flip-phase').textContent = '1. Ready (Hovering)';
+          document.getElementById('flip-phase-badge').textContent = 'HOVER READY';
+          document.getElementById('flip-phase-badge').style.color = 'var(--accent-green)';
+        }
+      }
+
+      return [HOVER_THRUST, HOVER_THRUST, HOVER_THRUST, HOVER_THRUST];
+    }
+
+    function showFlipCompletionBanner(type, duration, altLoss) {
+      const banner = document.getElementById('flip-banner');
+      banner.innerHTML = `✨ 360° ${type} PERFECTLY COMPLETED! ✨<br><span style="font-size: 13px; font-weight: 600; color: #00ff88;">Rotation Time: ${duration.toFixed(2)}s · Altitude Loss: ${Math.max(altLoss, 0).toFixed(2)}m · Level Stabilized</span>`;
+      banner.classList.add('show');
+      setTimeout(() => {
+        banner.classList.remove('show');
+      }, 1600);
+    }
+
+    // -------------------------------------------------------------
+    // Three.js 3D Visual Arena
+    // -------------------------------------------------------------
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x07090e);
+    scene.fog = new THREE.FogExp2(0x07090e, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 500);
+    camera.position.set(4.5, -4.5, 3.2);
+    camera.up.set(0, 0, 1);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.target.set(0, 0, 2.0);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dirLight = new THREE.DirectionalLight(0xff3366, 1.4);
+    dirLight.position.set(15, 15, 25);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    const subLight = new THREE.DirectionalLight(0x00f0ff, 0.8);
+    subLight.position.set(-15, -15, 10);
+    scene.add(subLight);
+
+    // Neon Cybernetic Grid
+    const gridHelper = new THREE.GridHelper(50, 50, 0xff3366, 0x1e293b);
+    gridHelper.rotation.x = Math.PI / 2;
+    scene.add(gridHelper);
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(100, 100),
+      new THREE.MeshStandardMaterial({ color: 0x0a0f1d, roughness: 0.8 })
+    );
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    // Aerobatic Rings / Stunt Gates in Arena
+    const ringGeo = new THREE.TorusGeometry(1.6, 0.04, 16, 64);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xff3366, wireframe: true });
+    const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+    ringMesh.rotation.y = Math.PI / 2;
+    ringMesh.position.set(0, 0, 2.2);
+    scene.add(ringMesh);
+
+    // Drone 3D Group
+    const droneGroup = new THREE.Group();
+    const coreMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 0.12, 0.03),
+      new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.2 })
+    );
+    droneGroup.add(coreMesh);
+
+    const noseMesh = new THREE.Mesh(
+      new THREE.ConeGeometry(0.025, 0.06, 16),
+      new THREE.MeshBasicMaterial({ color: 0xff3366 })
+    );
+    noseMesh.rotation.x = Math.PI / 2;
+    noseMesh.position.set(0, 0.08, 0);
+    droneGroup.add(noseMesh);
+
+    const rotors = [];
+    const motorSites = [
+      { x: ARM_LENGTH, y: ARM_LENGTH, color: 0xff3366 },
+      { x: -ARM_LENGTH, y: ARM_LENGTH, color: 0x00ff88 },
+      { x: -ARM_LENGTH, y: -ARM_LENGTH, color: 0x00f0ff },
+      { x: ARM_LENGTH, y: -ARM_LENGTH, color: 0xffbb00 }
+    ];
+
+    motorSites.forEach((site) => {
+      const arm = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.008, 0.008, ARM_LENGTH * 1.414, 8),
+        new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.9, roughness: 0.3 })
+      );
+      arm.position.set(site.x / 2, site.y / 2, 0);
+      arm.rotation.z = Math.atan2(site.y, site.x) + Math.PI / 2;
+      arm.rotation.x = Math.PI / 2;
+      droneGroup.add(arm);
+
+      const propGroup = new THREE.Group();
+      const blade1 = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.015, 0.002), new THREE.MeshStandardMaterial({ color: site.color }));
+      const blade2 = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.015, 0.002), new THREE.MeshStandardMaterial({ color: site.color }));
+      blade2.rotation.z = Math.PI / 2;
+      propGroup.add(blade1, blade2);
+      propGroup.position.set(site.x, site.y, 0.022);
+
+      droneGroup.add(propGroup);
+      rotors.push(propGroup);
+    });
+
+    scene.add(droneGroup);
+
+    // Acrobatic Ribbon Trail
+    const trailMax = 1200;
+    const trailPositions = new Float32Array(trailMax * 3);
+    const trailGeo = new THREE.BufferGeometry();
+    trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+    const trailLine = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({ color: 0xff3366, transparent: true, opacity: 0.8 }));
+    scene.add(trailLine);
+    let trailCount = 0;
+
+    // -------------------------------------------------------------
+    // 6-DOF Physics Integration Loop
+    // -------------------------------------------------------------
+    function physicsStep(dt) {
+      // Auto Training Trigger
+      if (autoTrainingEnabled && maneuverState === 'IDLE') {
+        autoTrainingCooldown -= dt;
+        if (autoTrainingCooldown <= 0) {
+          const nextType = Math.random() > 0.5 ? 'BACKFLIP' : 'FRONTFLIP';
+          triggerManeuver(nextType);
+          autoTrainingCooldown = 2.4;
+        }
+      }
+
+      motorThrusts = calculateAcrobaticThrusts(dt);
+
+      const totalThrust = motorThrusts.reduce((a, b) => a + b, 0);
+      const tau_body_x = ARM_LENGTH * (motorThrusts[0] + motorThrusts[1] - motorThrusts[2] - motorThrusts[3]);
+      const tau_body_y = ARM_LENGTH * (-motorThrusts[0] + motorThrusts[1] + motorThrusts[2] - motorThrusts[3]);
+      const tau_body_z = KAPPA * (motorThrusts[0] - motorThrusts[1] + motorThrusts[2] - motorThrusts[3]);
+
+      const Ixx = 0.003, Iyy = 0.003, Izz = 0.005;
+      const alpha_x = (tau_body_x - (Izz - Iyy) * omega.y * omega.z - ROT_DAMP_COEFF * omega.x) / Ixx;
+      const alpha_y = (tau_body_y - (Ixx - Izz) * omega.z * omega.x - ROT_DAMP_COEFF * omega.y) / Iyy;
+      const alpha_z = (tau_body_z - (Iyy - Ixx) * omega.x * omega.y - ROT_DAMP_COEFF * omega.z) / Izz;
+
+      omega.x += alpha_x * dt;
+      omega.y += alpha_y * dt;
+      omega.z += alpha_z * dt;
+
+      euler.x = wrapAngle(euler.x + omega.x * dt);
+      euler.y = wrapAngle(euler.y + omega.y * dt);
+      euler.z = wrapAngle(euler.z + omega.z * dt);
+      quat.setFromEuler(euler);
+
+      const thrustVecWorld = new THREE.Vector3(0, 0, totalThrust).applyQuaternion(quat);
+      const totalForceWorld = new THREE.Vector3(
+        thrustVecWorld.x - DRAG_COEFF * vel.x,
+        thrustVecWorld.y - DRAG_COEFF * vel.y,
+        thrustVecWorld.z - MASS * GRAVITY - DRAG_COEFF * vel.z
+      );
+
+      const accel = totalForceWorld.divideScalar(MASS);
+      vel.addScaledVector(accel, dt);
+      pos.addScaledVector(vel, dt);
+
+      // Floor contact safety
+      if (pos.z < 0.15) {
+        pos.z = 0.15;
+        if (vel.z < 0) vel.z = 0;
+      }
+    }
+
+    function setTimeScale(scale) {
+      timeScale = scale;
+      document.querySelectorAll('.btn-speed').forEach(b => b.classList.remove('active'));
+      if (scale === 0.35) document.getElementById('spd-03').classList.add('active');
+      else if (scale === 1.0) document.getElementById('spd-10').classList.add('active');
+      else if (scale === 2.0) document.getElementById('spd-20').classList.add('active');
+      document.getElementById('txt-time-scale').textContent = `${scale.toFixed(2)}x`;
+    }
+
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const rawDt = Math.min(clock.getDelta(), 0.05);
+      const dt = rawDt * timeScale;
+
+      physicsStep(dt);
+
+      // Visual Mesh Sync
+      droneGroup.position.copy(pos);
+      droneGroup.quaternion.copy(quat);
+
+      // Propeller Spin
+      const spinSpeed = 16.0;
+      rotors[0].rotation.z += motorThrusts[0] * spinSpeed * dt;
+      rotors[1].rotation.z -= motorThrusts[1] * spinSpeed * dt;
+      rotors[2].rotation.z += motorThrusts[2] * spinSpeed * dt;
+      rotors[3].rotation.z -= motorThrusts[3] * spinSpeed * dt;
+
+      // Trail Update
+      if (trailCount < trailMax) {
+        trailPositions[trailCount * 3] = pos.x;
+        trailPositions[trailCount * 3 + 1] = pos.y;
+        trailPositions[trailCount * 3 + 2] = pos.z;
+        trailCount++;
+      } else {
+        for (let i = 0; i < (trailMax - 1) * 3; i++) {
+          trailPositions[i] = trailPositions[i + 3];
+        }
+        trailPositions[(trailMax - 1) * 3] = pos.x;
+        trailPositions[(trailMax - 1) * 3 + 1] = pos.y;
+        trailPositions[(trailMax - 1) * 3 + 2] = pos.z;
+      }
+      trailGeo.attributes.position.needsUpdate = true;
+
+      controls.update();
+
+      // UI HUD Updates
+      const pitchDeg = (euler.y * 57.2958);
+      document.getElementById('val-pitch-big').textContent = `${pitchDeg.toFixed(1)}°`;
+      
+      const pitchStatus = document.getElementById('val-pitch-status');
+      if (Math.abs(pitchDeg) > 135) {
+        pitchStatus.textContent = '⚡ INVERTED (UPSIDE DOWN)';
+        pitchStatus.style.color = 'var(--accent-red)';
+      } else {
+        pitchStatus.textContent = 'UPRIGHT (Normal Flight)';
+        pitchStatus.style.color = 'var(--accent-green)';
+      }
+
+      document.getElementById('val-alt').textContent = pos.z.toFixed(2) + ' m';
+      document.getElementById('val-vz').textContent = (vel.z > 0 ? '+' : '') + vel.z.toFixed(2) + ' m/s';
+      document.getElementById('val-pos').textContent = `${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}`;
+      document.getElementById('val-roll').textContent = (euler.x * 57.3).toFixed(1) + '°';
+
+      const totalT = motorThrusts.reduce((a, b) => a + b, 0);
+      document.getElementById('val-total-thrust').textContent = totalT.toFixed(2) + ' N';
+
+      for (let i = 0; i < 4; i++) {
+        const pct = (motorThrusts[i] / MAX_THRUST) * 100;
+        document.getElementById(`m${i}-fill`).style.height = pct + '%';
+        document.getElementById(`m${i}-val`).textContent = motorThrusts[i].toFixed(2) + 'N';
+      }
+
+      document.getElementById('txt-pitch-rate').textContent = `${omega.y.toFixed(2)} rad/s (${(omega.y * 57.3).toFixed(0)}°/s)`;
+      document.getElementById('txt-accum-rot').textContent = `${(accumulatedPitchRot * 57.3).toFixed(1)}° / 360.0°`;
+
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+  </script>
+</body>
+</html>

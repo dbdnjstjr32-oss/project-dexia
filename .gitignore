@@ -25,6 +25,7 @@ commands.json
 ontology_state.json
 dexia/aip/pending_proposals.json
 e2e_*.log
+live_*.json
 
 # --- Audit / observability logs (runtime, Phase 6-9) ---
 *.jsonl

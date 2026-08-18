@@ -681,30 +681,39 @@
       const directionSign = maneuverType === 'BACKFLIP' ? 1.0 : -1.0;
 
       if (maneuverState === 'IDLE') {
-        // High-Precision Center Hover Stabilization
+        // High-Precision Center Station-Keeping Lock at (0, 0, 2.2)
         const targetPos = new THREE.Vector3(0, 0, 2.2);
         const posErr = new THREE.Vector3().subVectors(targetPos, pos);
 
+        // Position & Velocity Outer Loop
         const a_cmd = new THREE.Vector3(
-          4.5 * posErr.x - 3.2 * vel.x,
-          4.5 * posErr.y - 3.2 * vel.y,
-          6.5 * posErr.z - 4.5 * vel.z + GRAVITY
+          5.5 * posErr.x - 4.2 * vel.x,
+          5.5 * posErr.y - 4.2 * vel.y,
+          7.8 * posErr.z - 5.4 * vel.z + GRAVITY
         );
 
         const cosTilt = Math.max(Math.cos(euler.x) * Math.cos(euler.y), 0.7);
-        const thrustTotal = Math.min(Math.max((MASS * a_cmd.z) / cosTilt, 0.5), 4 * MAX_THRUST * 0.75);
+        const thrustTotal = THREE.MathUtils.clamp((MASS * a_cmd.z) / cosTilt, 0.5, 4 * MAX_THRUST * 0.75);
 
-        const eRoll = -euler.x;
-        const ePitch = -euler.y;
-        const eYaw = -euler.z;
+        const cy = Math.cos(euler.z), sy = Math.sin(euler.z);
+        const a_fwd = -a_cmd.x * sy + a_cmd.y * cy;
+        const a_right = a_cmd.x * cy + a_cmd.y * sy;
 
-        const tau_x = 12.0 * eRoll - 2.0 * omega.x;
-        const tau_y = 12.0 * ePitch - 2.0 * omega.y;
-        const tau_z = 5.0 * eYaw - 1.0 * omega.z;
+        const rollDes = THREE.MathUtils.clamp(-a_fwd / GRAVITY, -0.30, 0.30);
+        const pitchDes = THREE.MathUtils.clamp(a_right / GRAVITY, -0.30, 0.30);
+
+        const eRoll = rollDes - euler.x;
+        const ePitch = pitchDes - euler.y;
+        const eYaw = wrapAngle(-euler.z);
+
+        const tau_x = 16.0 * eRoll - 2.8 * omega.x;
+        const tau_y = 16.0 * ePitch - 2.8 * omega.y;
+        const tau_z = 6.0 * eYaw - 1.2 * omega.z;
 
         const tBase = thrustTotal / 4.0;
-        const dt_x = THREE.MathUtils.clamp(tau_x / (4.0 * ARM_LENGTH), -0.5 * tBase, 0.5 * tBase);
-        const dt_y = THREE.MathUtils.clamp(tau_y / (4.0 * ARM_LENGTH), -0.5 * tBase, 0.5 * tBase);
+        const max_d = 0.55 * tBase;
+        const dt_x = THREE.MathUtils.clamp(tau_x / (4.0 * ARM_LENGTH), -max_d, max_d);
+        const dt_y = THREE.MathUtils.clamp(tau_y / (4.0 * ARM_LENGTH), -max_d, max_d);
         const dt_z = THREE.MathUtils.clamp(tau_z / (4.0 * KAPPA), -0.2 * tBase, 0.2 * tBase);
 
         return [
@@ -716,12 +725,12 @@
       }
 
       else if (maneuverState === 'POP_UP') {
-        // Phase 1: Boost altitude vertically for 0.18s
-        if (maneuverTimer < 0.18) {
-          return [5.5, 5.5, 5.5, 5.5]; // Pop-up climb
+        // Phase 1: Boost altitude vertically for 0.16s
+        if (maneuverTimer < 0.16) {
+          return [5.8, 5.8, 5.8, 5.8]; // Pop-up climb
         } else {
           maneuverState = 'TORQUE_PULSE';
-          document.getElementById('txt-flip-phase').textContent = `3. Pitch Torque Inversion (${directionSign > 0 ? '+Pitch' : '-Pitch'})`;
+          document.getElementById('txt-flip-phase').textContent = `3. Pitch Torque Pulse (${directionSign > 0 ? '+Pitch' : '-Pitch'})`;
           document.getElementById('txt-flip-phase').style.color = 'var(--accent-red)';
           document.getElementById('flip-phase-badge').textContent = 'ROTATING';
           document.getElementById('flip-phase-badge').style.color = 'var(--accent-red)';
@@ -730,41 +739,37 @@
 
       if (maneuverState === 'TORQUE_PULSE') {
         // Phase 2: Apply massive differential pitch torque
-        if (accumulatedPitchRot < (Math.PI * 0.75)) { // 0° ~ 135°
+        if (accumulatedPitchRot < (Math.PI * 0.70)) { // 0° ~ 125°
           if (maneuverType === 'BACKFLIP') {
-            // Front motors MAX, Back motors CUT
-            return [6.8, 6.8, 0.3, 0.3];
+            return [6.8, 6.8, 0.2, 0.2];
           } else {
-            // Back motors MAX, Front motors CUT
-            return [0.3, 0.3, 6.8, 6.8];
+            return [0.2, 0.2, 6.8, 6.8];
           }
         } else {
           maneuverState = 'INVERTED_COAST';
-          document.getElementById('txt-flip-phase').textContent = '4. Inverted Zero-G Coasting (180°)';
+          document.getElementById('txt-flip-phase').textContent = '4. Inverted Zero-G Coast (180°)';
           document.getElementById('txt-flip-phase').style.color = 'var(--accent-purple)';
         }
       }
 
       if (maneuverState === 'INVERTED_COAST') {
-        // Phase 3: Coast through inverted 180° with zero thrust (prevents downward acceleration)
-        if (accumulatedPitchRot < (Math.PI * 1.45)) { // 135° ~ 260°
-          return [0.2, 0.2, 0.2, 0.2]; // cut throttle while upside down
+        // Phase 3: Coast through inverted 180° with zero thrust
+        if (accumulatedPitchRot < (Math.PI * 1.40)) { // 125° ~ 250°
+          return [0.1, 0.1, 0.1, 0.1]; // cut throttle while upside down
         } else {
           maneuverState = 'BRAKE_CATCH';
-          document.getElementById('txt-flip-phase').textContent = '5. Counter-Torque Brake & Catch (300°+)';
+          document.getElementById('txt-flip-phase').textContent = '5. Counter-Torque Brake (300°+)';
           document.getElementById('txt-flip-phase').style.color = 'var(--accent-yellow)';
         }
       }
 
       if (maneuverState === 'BRAKE_CATCH') {
-        // Phase 4: Counter-torque to rapidly brake pitch rate as it approaches 360°
-        if (accumulatedPitchRot < (Math.PI * 1.88) && Math.abs(omega.y) > 2.0) {
+        // Phase 4: Counter-torque to rapidly brake pitch rate as it completes 360°
+        if (accumulatedPitchRot < (Math.PI * 1.85) && Math.abs(omega.y) > 1.5) {
           if (maneuverType === 'BACKFLIP') {
-            // Reverse torque: Back motors boost, Front motors low
-            return [0.8, 0.8, 5.8, 5.8];
+            return [0.5, 0.5, 6.2, 6.2];
           } else {
-            // Reverse torque: Front motors boost, Back motors low
-            return [5.8, 5.8, 0.8, 0.8];
+            return [6.2, 6.2, 0.5, 0.5];
           }
         } else {
           maneuverState = 'STABILIZE';
@@ -773,42 +778,47 @@
           document.getElementById('txt-total-flips').textContent = `${totalFlipsCompleted} FLIPS`;
           document.getElementById('txt-last-duration').textContent = maneuverTimer.toFixed(2) + ' s';
           document.getElementById('txt-alt-loss').textContent = Math.max(startAltitude - pos.z, 0).toFixed(2) + ' m';
-          document.getElementById('txt-flip-phase').textContent = '6. Level Recovery & Altitude Catch';
+          document.getElementById('txt-flip-phase').textContent = '6. Level Recovery & Home Catch';
           document.getElementById('txt-flip-phase').style.color = 'var(--accent-green)';
         }
       }
 
       if (maneuverState === 'STABILIZE') {
-        // Phase 5: High-gain Leveling & Altitude Re-acquisition
-        if (maneuverTimer < 1.4) {
-          const eRoll = -euler.x;
-          const ePitch = -euler.y;
-          const eYaw = -euler.z;
-          const tau_x = 18.0 * eRoll - 3.0 * omega.x;
-          const tau_y = 18.0 * ePitch - 3.0 * omega.y;
-          const tau_z = 6.0 * eYaw - 1.2 * omega.z;
+        // Phase 5: Active leveling & Return-to-Home braking
+        const targetPos = new THREE.Vector3(0, 0, 2.2);
+        const posErr = new THREE.Vector3().subVectors(targetPos, pos);
 
-          const zErr = 2.2 - pos.z;
-          const totalT = THREE.MathUtils.clamp(MASS * (GRAVITY + 6.0 * zErr - 4.5 * vel.z), 1.0, 24.0);
-          const tBase = totalT / 4.0;
+        const eRoll = -euler.x;
+        const ePitch = -euler.y;
+        const eYaw = wrapAngle(-euler.z);
 
-          const dt_x = tau_x / (4.0 * ARM_LENGTH);
-          const dt_y = tau_y / (4.0 * ARM_LENGTH);
-          const dt_z = tau_z / (4.0 * KAPPA);
+        const tau_x = 22.0 * eRoll - 3.8 * omega.x;
+        const tau_y = 22.0 * ePitch - 3.8 * omega.y;
+        const tau_z = 6.0 * eYaw - 1.5 * omega.z;
 
-          return [
-            THREE.MathUtils.clamp(tBase + dt_x - dt_y + dt_z, 0, MAX_THRUST),
-            THREE.MathUtils.clamp(tBase + dt_x + dt_y - dt_z, 0, MAX_THRUST),
-            THREE.MathUtils.clamp(tBase - dt_x + dt_y + dt_z, 0, MAX_THRUST),
-            THREE.MathUtils.clamp(tBase - dt_x - dt_y - dt_z, 0, MAX_THRUST)
-          ];
-        } else {
-          // Completed
+        const a_z = 7.5 * posErr.z - 5.0 * vel.z + GRAVITY;
+        const totalT = THREE.MathUtils.clamp(MASS * a_z, 1.0, 26.0);
+        const tBase = totalT / 4.0;
+
+        const dt_x = THREE.MathUtils.clamp(tau_x / (4.0 * ARM_LENGTH), -0.5 * tBase, 0.5 * tBase);
+        const dt_y = THREE.MathUtils.clamp(tau_y / (4.0 * ARM_LENGTH), -0.5 * tBase, 0.5 * tBase);
+        const dt_z = THREE.MathUtils.clamp(tau_z / (4.0 * KAPPA), -0.2 * tBase, 0.2 * tBase);
+
+        // When rotation settles and drone is level (< 5 deg pitch/roll), lock back into IDLE
+        if (Math.abs(euler.x) < 0.08 && Math.abs(euler.y) < 0.08 && Math.abs(omega.y) < 0.4 && maneuverTimer > 0.6) {
           maneuverState = 'IDLE';
+          accumulatedPitchRot = 0;
           document.getElementById('txt-flip-phase').textContent = '1. Ready (Hovering)';
           document.getElementById('flip-phase-badge').textContent = 'HOVER READY';
           document.getElementById('flip-phase-badge').style.color = 'var(--accent-green)';
         }
+
+        return [
+          THREE.MathUtils.clamp(tBase + dt_x - dt_y + dt_z, 0, MAX_THRUST),
+          THREE.MathUtils.clamp(tBase + dt_x + dt_y - dt_z, 0, MAX_THRUST),
+          THREE.MathUtils.clamp(tBase - dt_x + dt_y + dt_z, 0, MAX_THRUST),
+          THREE.MathUtils.clamp(tBase - dt_x - dt_y - dt_z, 0, MAX_THRUST)
+        ];
       }
 
       return [HOVER_THRUST, HOVER_THRUST, HOVER_THRUST, HOVER_THRUST];
@@ -942,7 +952,7 @@
         if (autoTrainingCooldown <= 0) {
           const nextType = Math.random() > 0.5 ? 'BACKFLIP' : 'FRONTFLIP';
           triggerManeuver(nextType);
-          autoTrainingCooldown = 2.4;
+          autoTrainingCooldown = 5.0; // Wait 5.0s of calm steady hover before next attempt
         }
       }
 

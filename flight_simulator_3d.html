@@ -1423,21 +1423,38 @@
       const tau_z = 6.0 * eYaw - 1.2 * omega.z;
 
       const tBase = thrustTotal / 4.0;
-      const max_d_att = 0.55 * tBase;
+      
+      // Roll/Pitch Attitude Delta Torques (High Priority)
+      const max_d_att = 0.45 * tBase;
       const dt_x = THREE.MathUtils.clamp(tau_x / (4.0 * ARM_LENGTH), -max_d_att, max_d_att);
       const dt_y = THREE.MathUtils.clamp(tau_y / (4.0 * ARM_LENGTH), -max_d_att, max_d_att);
-      const dt_z = THREE.MathUtils.clamp(tau_z / (4.0 * KAPPA), -0.25 * tBase, 0.25 * tBase);
+      
+      // Yaw Delta Torque (Lower Priority: De-weighted so it never starves roll/pitch)
+      const max_d_yaw = 0.15 * tBase;
+      const dt_z = THREE.MathUtils.clamp(tau_z / (4.0 * KAPPA), -max_d_yaw, max_d_yaw);
 
-      const T0 = tBase + dt_x - dt_y + dt_z;
-      const T1 = tBase + dt_x + dt_y - dt_z;
-      const T2 = tBase - dt_x + dt_y + dt_z;
-      const T3 = tBase - dt_x - dt_y - dt_z;
+      let rawT = [
+        tBase + dt_x - dt_y + dt_z,
+        tBase + dt_x + dt_y - dt_z,
+        tBase - dt_x + dt_y + dt_z,
+        tBase - dt_x - dt_y - dt_z
+      ];
+
+      // Dynamic Anti-Saturation & Minimum Idle Margin Guard (T_min = 0.35 N)
+      const T_MIN_IDLE = 0.35;
+      const minMotor = Math.min(...rawT);
+      if (minMotor < T_MIN_IDLE) {
+        const offset = T_MIN_IDLE - minMotor;
+        for (let i = 0; i < 4; i++) {
+          rawT[i] += offset;
+        }
+      }
 
       return [
-        THREE.MathUtils.clamp(T0, 0, MAX_THRUST),
-        THREE.MathUtils.clamp(T1, 0, MAX_THRUST),
-        THREE.MathUtils.clamp(T2, 0, MAX_THRUST),
-        THREE.MathUtils.clamp(T3, 0, MAX_THRUST)
+        THREE.MathUtils.clamp(rawT[0], T_MIN_IDLE, MAX_THRUST),
+        THREE.MathUtils.clamp(rawT[1], T_MIN_IDLE, MAX_THRUST),
+        THREE.MathUtils.clamp(rawT[2], T_MIN_IDLE, MAX_THRUST),
+        THREE.MathUtils.clamp(rawT[3], T_MIN_IDLE, MAX_THRUST)
       ];
     }
 
@@ -1508,10 +1525,10 @@
       const neuralAlpha = Math.min(Math.max((dist - 0.2) * 0.12, 0.0), 0.15);
 
       const finalThrusts = [
-        THREE.MathUtils.clamp(baseGeo[0] + (rawA[0] - meanRawA) * neuralAlpha, 0, MAX_THRUST),
-        THREE.MathUtils.clamp(baseGeo[1] + (rawA[1] - meanRawA) * neuralAlpha, 0, MAX_THRUST),
-        THREE.MathUtils.clamp(baseGeo[2] + (rawA[2] - meanRawA) * neuralAlpha, 0, MAX_THRUST),
-        THREE.MathUtils.clamp(baseGeo[3] + (rawA[3] - meanRawA) * neuralAlpha, 0, MAX_THRUST)
+        THREE.MathUtils.clamp(baseGeo[0] + (rawA[0] - meanRawA) * neuralAlpha, 0.35, MAX_THRUST),
+        THREE.MathUtils.clamp(baseGeo[1] + (rawA[1] - meanRawA) * neuralAlpha, 0.35, MAX_THRUST),
+        THREE.MathUtils.clamp(baseGeo[2] + (rawA[2] - meanRawA) * neuralAlpha, 0.35, MAX_THRUST),
+        THREE.MathUtils.clamp(baseGeo[3] + (rawA[3] - meanRawA) * neuralAlpha, 0.35, MAX_THRUST)
       ];
 
       // Update Diagnostics Cache

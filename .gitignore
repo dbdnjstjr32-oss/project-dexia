@@ -1,0 +1,51 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# --- Virtual environments (heavy, machine-specific) ---
+.venv312/
+.venv/
+venv/
+
+# --- Node / Next.js (frontend) ---
+node_modules/
+dexia-hud/node_modules/
+dexia-hud/.next/
+dexia-hud/out/
+
+# --- RLlib model checkpoints (large, regenerable via training) ---
+checkpoints/
+
+# --- Runtime artifacts (regenerated every tick/run) ---
+telemetry.json
+commands.json
+*.json.lock
+ontology_state.json
+dexia/aip/pending_proposals.json
+e2e_*.log
+
+# --- Audit / observability logs (runtime, Phase 6-9) ---
+*.jsonl
+action_audit.jsonl
+llm_audit.jsonl
+
+# --- Generated reports & build outputs ---
+phase1_results.html
+phase3_results.html
+*.zip
+Dexia_Wargame_Sim_Final/
+
+# --- SQLite lineage / ontology history (AIP write-funnel) ---
+dexia.db
+dexia.db-wal
+dexia.db-shm
+
+# --- HUD saved battlefield tables (user data) ---
+battlefield_tables.json
+
+# --- Misc ---
+*.tmp
+.DS_Store
+Thumbs.db

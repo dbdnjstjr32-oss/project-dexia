@@ -1,0 +1,206 @@
+# Dexia — Equipment Catalog (AIP data spine).
+#
+# The data-driven capability ontology. Every platform (blue + red) is ONE entry.
+# A single entry drives five subsystems, so adding a new weapon/sensor is a data
+# edit — not code:
+#   sensors[]   -> feed observation models (what it sees, at what precision)
+#   emits       -> fusion detectability (can SIGINT pick it up)
+#   effects[]   -> AssetMatch feasibility + sim effect resolution
+#   commands[]  -> ActionTypes it accepts (auto-surfaced to the LLM as tools)
+#   constraints -> ammo / cooldown / readiness
+#
+# category vocabulary (abstract classification matched by sensors.detects and
+# effect suitability): armor | apc | infantry | artillery | air_defense | ew |
+# emitter | air | sea | structure
+#
+# ranges in metres, times in seconds. This starter set spans land/air/EW across
+# theaters; extend freely — the loader is tolerant and every field has a default.
+
+# ============================ BLUE (friendly) ============================== #
+m777_howitzer:
+  side: blue
+  domain: land
+  role: fires
+  effects:
+    - {type: indirect_fire, range_m: 30000, min_range_m: 4000, lethal_r: 70, tof_s: 40}
+  commands: [request_fires]
+  constraints: {ammo: true, cooldown_s: 20, shoot_and_scoot: true}
+
+m142_himars:
+  side: blue
+  domain: land
+  role: fires
+  effects:
+    - {type: indirect_fire, range_m: 70000, min_range_m: 15000, lethal_r: 80, tof_s: 90}
+  commands: [request_fires]
+  constraints: {ammo: true, cooldown_s: 60, shoot_and_scoot: true}
+
+tb2_recon_uav:
+  side: blue
+  domain: air
+  role: isr
+  sensors:
+    - {type: eo_ir, range_m: 8000, fov_deg: 30, pos_noise_m: 5, detects: [armor, apc, infantry, artillery, air_defense, structure]}
+  commands: [task_isr, move, recall]
+  constraints: {endurance_s: 7200}
+
+switchblade:
+  side: blue
+  domain: air
+  role: strike
+  sensors:
+    - {type: eo_ir, range_m: 3000, fov_deg: 40, pos_noise_m: 8, detects: [armor, apc, infantry]}
+  effects:
+    - {type: loiter_strike, range_m: 10000, lethal_r: 15, tof_s: 30}
+  commands: [engage, move, recall]
+  constraints: {ammo: true, one_shot: true}
+
+ew_jammer_gnd:
+  side: blue
+  domain: land
+  role: ew
+  effects:
+    - {type: jam, range_m: 20000, degrades: radar}
+  commands: [jam]
+  constraints: {cooldown_s: 10}
+
+ugs_field:
+  side: blue
+  domain: land
+  role: sensor
+  sensors:
+    - {type: acoustic, range_m: 1500, fov_deg: 360, pos_noise_m: 20, detects: [armor, apc, infantry]}
+  commands: []
+  constraints: {static: true}
+
+gsr_radar:                       # ground-surveillance radar (P4): sees ground armor
+  side: blue                     # past a ridge where EO is occluded (terrain_occludes: false)
+  domain: land
+  role: sensor
+  sensors:
+    - {type: radar, range_m: 25000, fov_deg: 360, pos_noise_m: 25, terrain_occludes: false, detects: [armor, apc]}
+  commands: []
+  constraints: {static: true, emits_warning: true}
+
+recon_drone:                    # legacy Dexia recon quad (DroneObject-backed)
+  side: blue
+  domain: air
+  role: isr
+  sensors:
+    - {type: eo_ir, range_m: 5000, fov_deg: 60, pos_noise_m: 6, detects: [armor, apc, air_defense]}
+  commands: [deploy, task_isr, move, recall]
+
+kami_drone:                     # legacy Dexia loitering munition (DroneObject-backed)
+  side: blue
+  domain: air
+  role: strike
+  effects:
+    - {type: loiter_strike, range_m: 6000, lethal_r: 10, tof_s: 20}
+  commands: [deploy, engage, move, recall]
+  constraints: {ammo: true, one_shot: true, killchain_mac: true}
+
+# ============================== RED (threat) =============================== #
+t72_tank:
+  side: red
+  domain: land
+  role: maneuver
+  category: armor
+  effects:
+    - {type: direct_fire, range_m: 4000, lethal_r: 12, tof_s: 2}
+  commands: []
+  constraints: {ammo: true}
+
+bmp_apc:
+  side: red
+  domain: land
+  role: maneuver
+  category: apc
+  effects:
+    - {type: direct_fire, range_m: 2500, lethal_r: 8, tof_s: 2}
+  commands: []
+
+infantry_squad:
+  side: red
+  domain: land
+  role: maneuver
+  category: infantry
+  effects:
+    - {type: direct_fire, range_m: 800, lethal_r: 5, tof_s: 1}
+  commands: []
+
+sa11_sam:
+  side: red
+  domain: land
+  role: air_defense
+  category: air_defense
+  sensors:
+    - {type: radar, range_m: 35000, fov_deg: 360, pos_noise_m: 30, detects: [air]}
+  effects:
+    - {type: sam_engage, range_m: 28000, lethal_r: 30, tof_s: 8, min_alt_m: 15, max_alt_m: 25000}
+  emits: {type: radar_emitter, detectable_by: [sigint]}
+  commands: []
+  constraints: {ammo: true, suppressible: true}
+
+krasukha_ew:
+  side: red
+  domain: land
+  role: ew
+  category: ew
+  effects:
+    - {type: jam, range_m: 25000, degrades: comms}
+  emits: {type: radar_emitter, detectable_by: [sigint]}
+  commands: []
+  constraints: {suppressible: true}
+
+s300_sam:
+  side: red
+  domain: land
+  role: air_defense
+  category: air_defense
+  sensors:
+    - {type: radar, range_m: 90000, fov_deg: 360, pos_noise_m: 40, detects: [air]}
+  effects:
+    - {type: sam_engage, range_m: 75000, lethal_r: 40, tof_s: 12}
+  emits: {type: radar_emitter, detectable_by: [sigint]}
+  commands: []
+  constraints: {ammo: true, suppressible: true}
+
+# --- theater flavour: Middle East / Korea / coastal -------------------------- #
+technical_truck:                # insurgent light vehicle (Middle East)
+  side: red
+  domain: land
+  role: maneuver
+  category: apc
+  effects:
+    - {type: direct_fire, range_m: 1500, lethal_r: 6, tof_s: 1}
+  commands: []
+
+koksan_170mm:                   # DPRK long-range gun (Korea)
+  side: red
+  domain: land
+  role: fires
+  category: artillery
+  effects:
+    - {type: indirect_fire, range_m: 40000, min_range_m: 6000, lethal_r: 60, tof_s: 60}
+  commands: []
+  constraints: {ammo: true}
+
+manpads_team:                   # IR-guided — NOT radar, so SIGINT-blind (EO only)
+  side: red
+  domain: land
+  role: air_defense
+  category: air_defense
+  effects:
+    - {type: sam_engage, range_m: 5000, lethal_r: 10, tof_s: 5}
+  commands: []
+  constraints: {ammo: true}
+
+coastal_gun:                    # static shore battery (Korea coastal)
+  side: red
+  domain: land
+  role: fires
+  category: artillery
+  effects:
+    - {type: indirect_fire, range_m: 27000, min_range_m: 3000, lethal_r: 50, tof_s: 35}
+  commands: []
+  constraints: {ammo: true, static: true}

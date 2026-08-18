@@ -1,0 +1,78 @@
+scenario:
+  id: desert_storm-019
+  theater: desert_storm
+  mission:
+    tasking: 통합방공망 아래 전개한 적 기갑사단을 SEAD 후 격멸하라.
+    intent: destroy
+    roe: []
+    victory:
+      hold_line:
+      - 6025
+      - 0
+      max_blue_loss: 3
+      time_limit_s: 720
+  blue:
+  - cls: m142_himars
+    n: 2
+    pos:
+    - -944
+    - 111
+  - cls: m777_howitzer
+    n: 1
+    pos:
+    - -944
+    - -55
+  - cls: tb2_recon_uav
+    n: 1
+    pos:
+    - -944
+    - 142
+  - cls: switchblade
+    n: 2
+    pos:
+    - -944
+    - -147
+  - cls: ew_jammer_gnd
+    n: 1
+    pos:
+    - -944
+    - 85
+  red:
+  - cls: t72_tank
+    n: 8
+    behavior: advance
+    route:
+    - - 6847
+      - 40
+    - - 3511
+      - 40
+  - cls: bmp_apc
+    n: 5
+    behavior: advance
+    route:
+    - - 6847
+      - -249
+    - - 3511
+      - -249
+  - cls: s300_sam
+    n: 1
+    behavior: static_ad
+    pos:
+    - 6251
+    - -2716
+  - cls: sa11_sam
+    n: 1
+    behavior: static_ad
+    pos:
+    - 7778
+    - 2380
+  - cls: krasukha_ew
+    n: 1
+    behavior: periodic_jam
+    pos:
+    - 7687
+    - -2396
+  feeds:
+  - sigint
+  - ugs
+  - uav_eo

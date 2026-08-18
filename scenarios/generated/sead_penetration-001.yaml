@@ -1,0 +1,59 @@
+scenario:
+  id: sead_penetration-001
+  theater: sead_penetration
+  terrain:
+    type: hill
+    peak: 250.0
+    center:
+    - 3000.0
+    - 0.0
+    sigma: 1800.0
+    size: 81
+    dx: 160.0
+    origin:
+    - -3500.0
+    - -4500.0
+  mission:
+    tasking: 적 통합방공망(SAM) 권역을 정찰 UAV로 침투·식별하라. 공중자산 생존에 유의.
+    intent: destroy
+    roe: []
+    victory:
+      hold_line:
+      - 0
+      - 0
+      max_blue_loss: 1
+      time_limit_s: 600
+  blue:
+  - cls: tb2_recon_uav
+    n: 1
+    behavior: advance
+    route:
+    - - -1000
+      - 0
+    - - 2000
+      - 0
+    - - 5000
+      - 0
+  - cls: m777_howitzer
+    n: 2
+    pos:
+    - -1000
+    - 200
+  red:
+  - cls: sa11_sam
+    n: 1
+    behavior: static_ad
+    pos:
+    - 4000
+    - 0
+  - cls: t72_tank
+    n: 3
+    behavior: advance
+    route:
+    - - 5000
+      - 300
+    - - 2000
+      - 300
+  feeds:
+  - sigint
+  - uav_eo

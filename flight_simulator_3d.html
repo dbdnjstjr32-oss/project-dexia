@@ -1,0 +1,2074 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DEXIA 6-DOF Autonomous Flight Simulator & AI Neural Diagnostics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Pretendard:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #07090e;
+      --card-bg: rgba(13, 17, 26, 0.94);
+      --border: rgba(255, 255, 255, 0.12);
+      --accent: #00f0ff;
+      --accent-green: #00ff88;
+      --accent-red: #ff3366;
+      --accent-yellow: #ffbb00;
+      --accent-purple: #c084fc;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Pretendard', sans-serif;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+      cursor: grab;
+    }
+
+    #canvas-container:active {
+      cursor: grabbing;
+    }
+
+    /* Top HUD */
+    .top-hud {
+      position: absolute;
+      top: 16px;
+      left: 20px;
+      right: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .hud-title {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      padding: 10px 20px;
+      border-radius: 8px;
+      pointer-events: auto;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    .hud-title h1 {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .hud-title h1 span.badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 800;
+      transition: all 0.3s;
+    }
+
+    .badge-ai {
+      background: rgba(192, 132, 252, 0.2);
+      color: var(--accent-purple);
+      border: 1px solid var(--accent-purple);
+      box-shadow: 0 0 10px rgba(192, 132, 252, 0.3);
+    }
+
+    .badge-geo {
+      background: rgba(0, 240, 255, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(0, 240, 255, 0.4);
+    }
+
+    .sync-status-badge {
+      font-size: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(0, 255, 136, 0.12);
+      color: var(--accent-green);
+      border: 1px solid rgba(0, 255, 136, 0.3);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-left: 8px;
+    }
+
+    .sync-status-badge.offline {
+      background: rgba(255, 51, 102, 0.15);
+      color: var(--accent-red);
+      border-color: var(--accent-red);
+    }
+
+    .hud-title p {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Camera Bar */
+    .camera-bar {
+      display: flex;
+      gap: 6px;
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      padding: 6px;
+      border-radius: 8px;
+      pointer-events: auto;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    .cam-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .cam-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .cam-btn.active {
+      background: var(--accent);
+      color: #000;
+      font-weight: 700;
+      border-color: var(--accent);
+      box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+    }
+
+    /* Left Control Panel */
+    .controls-panel {
+      position: absolute;
+      top: 85px;
+      left: 20px;
+      width: 320px;
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    .panel-header {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--accent);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 5px;
+    }
+
+    /* Pilot Switcher */
+    .pilot-switch-box {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      background: rgba(0, 0, 0, 0.4);
+      padding: 4px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    .btn-mode-switch {
+      border: 1px solid transparent;
+      padding: 8px;
+      border-radius: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: 'JetBrains Mono', monospace;
+      text-align: center;
+      transition: all 0.2s;
+      background: transparent;
+      color: var(--text-muted);
+    }
+
+    .btn-mode-switch:hover {
+      color: #fff;
+    }
+
+    .btn-mode-switch.active-ai {
+      background: linear-gradient(135deg, rgba(192, 132, 252, 0.35), rgba(147, 51, 234, 0.5));
+      color: #fff;
+      border-color: var(--accent-purple);
+      box-shadow: 0 0 10px rgba(192, 132, 252, 0.4);
+    }
+
+    .btn-mode-switch.active-geo {
+      background: linear-gradient(135deg, rgba(0, 240, 255, 0.25), rgba(0, 136, 255, 0.4));
+      color: #fff;
+      border-color: var(--accent);
+      box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+    }
+
+    .mission-status-box {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      border-radius: 6px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .progress-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-green));
+      transition: width 0.1s linear;
+    }
+
+    .btn-action-primary {
+      background: linear-gradient(135deg, #00f0ff, #0088ff);
+      color: #000;
+      border: none;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: 'Pretendard', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      box-shadow: 0 4px 14px rgba(0, 240, 255, 0.3);
+    }
+
+    .btn-action-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(0, 240, 255, 0.5);
+    }
+
+    .btn-ai-inspector {
+      background: linear-gradient(135deg, rgba(192, 132, 252, 0.2), rgba(147, 51, 234, 0.3));
+      border: 1px solid var(--accent-purple);
+      color: var(--accent-purple);
+      padding: 9px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: 'Pretendard', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      box-shadow: 0 0 12px rgba(192, 132, 252, 0.2);
+    }
+
+    .btn-ai-inspector:hover {
+      background: var(--accent-purple);
+      color: #000;
+      box-shadow: 0 0 16px rgba(192, 132, 252, 0.5);
+    }
+
+    /* Auto-Stop Toggle Button */
+    .toggle-autostop-btn {
+      width: 100%;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: all 0.2s;
+      border: 1px solid var(--border);
+    }
+
+    .toggle-autostop-btn.autostop-on {
+      background: rgba(255, 187, 0, 0.15);
+      color: var(--accent-yellow);
+      border-color: rgba(255, 187, 0, 0.5);
+    }
+
+    .toggle-autostop-btn.autostop-off {
+      background: rgba(192, 132, 252, 0.15);
+      color: var(--accent-purple);
+      border-color: rgba(192, 132, 252, 0.5);
+      box-shadow: 0 0 12px rgba(192, 132, 252, 0.2);
+    }
+
+    .btn-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    button.hud-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: 'Pretendard', sans-serif;
+    }
+
+    button.hud-btn:hover {
+      background: rgba(0, 240, 255, 0.15);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    /* Active Waypoints List */
+    .waypoint-list-box {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      padding: 8px 10px;
+      max-height: 95px;
+      overflow-y: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .wp-item {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-muted);
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+
+    .wp-item.active {
+      background: rgba(0, 240, 255, 0.15);
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    /* Telemetry Right Panel */
+    .telemetry-panel {
+      position: absolute;
+      top: 85px;
+      right: 20px;
+      width: 300px;
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .tele-item {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .tele-label {
+      font-size: 9px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+
+    .tele-val {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      margin-top: 2px;
+    }
+
+    /* Motor Thrust Meters */
+    .motors-container {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-top: 2px;
+    }
+
+    .motor-meter {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .motor-bar-bg {
+      width: 100%;
+      height: 52px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: flex-end;
+    }
+
+    .motor-bar-fill {
+      width: 100%;
+      background: var(--accent);
+      transition: height 0.05s linear;
+    }
+
+    .motor-name {
+      font-size: 9px;
+      color: var(--text-muted);
+    }
+
+    .motor-val {
+      font-size: 9px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* Modal Styling */
+    .modal-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(4, 6, 12, 0.85);
+      backdrop-filter: blur(14px);
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.show {
+      display: flex;
+    }
+
+    .modal-card {
+      background: rgba(13, 18, 30, 0.98);
+      border: 1px solid rgba(192, 132, 252, 0.4);
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 30px rgba(192, 132, 252, 0.2);
+      border-radius: 12px;
+      width: min(94vw, 1180px);
+      max-height: 88vh;
+      display: flex;
+      flex-direction: column;
+      padding: 22px 26px;
+      gap: 14px;
+      overflow: hidden;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 10px;
+    }
+
+    .modal-header h2 {
+      font-size: 16px;
+      font-weight: 800;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .ai-diag-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .diag-section {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .diag-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent-purple);
+      text-transform: uppercase;
+      font-family: 'JetBrains Mono', monospace;
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding-bottom: 4px;
+    }
+
+    .tensor-val-list {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+    }
+
+    .tensor-cell {
+      background: rgba(255, 255, 255, 0.03);
+      padding: 4px 6px;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .tensor-cell .lbl {
+      color: var(--text-muted);
+      font-size: 8px;
+    }
+
+    .tensor-cell .val {
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .layer-stats-box {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .layer-stat-item {
+      background: rgba(192, 132, 252, 0.05);
+      border: 1px solid rgba(192, 132, 252, 0.15);
+      padding: 8px;
+      border-radius: 6px;
+    }
+
+    .layer-stat-item .title {
+      font-size: 9px;
+      color: var(--text-muted);
+    }
+
+    .layer-stat-item .val {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--accent-purple);
+      margin-top: 2px;
+    }
+
+    .heatmap-strip {
+      width: 100%;
+      height: 14px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 3px;
+      overflow: hidden;
+      display: flex;
+      margin-top: 4px;
+    }
+
+    .heatmap-bar {
+      height: 100%;
+      flex: 1;
+    }
+
+    .action-contrib-box {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .action-card {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      font-size: 10px;
+    }
+
+    .action-card .motor-id {
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .btn-small {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border);
+      color: #fff;
+      padding: 6px 12px;
+      border-radius: 5px;
+      font-size: 11px;
+      cursor: pointer;
+      font-family: 'Pretendard', sans-serif;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .btn-small:hover {
+      background: var(--accent);
+      color: #000;
+    }
+
+    /* Analysis Overlay Modal */
+    .analysis-overlay {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(120%);
+      width: min(94vw, 1140px);
+      max-height: 520px;
+      background: rgba(11, 15, 25, 0.96);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(0, 240, 255, 0.4);
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 240, 255, 0.2);
+      border-radius: 12px;
+      padding: 18px 22px;
+      z-index: 50;
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .analysis-overlay.show {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+    }
+
+    .kpi-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .kpi-title {
+      font-size: 9px;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+      text-transform: uppercase;
+    }
+
+    .kpi-value {
+      font-size: 16px;
+      font-weight: 800;
+      color: #fff;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .kpi-sub {
+      font-size: 10px;
+      color: var(--accent-green);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .table-container {
+      overflow-y: auto;
+      max-height: 220px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(0, 0, 0, 0.3);
+    }
+
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      text-align: left;
+    }
+
+    table.data-table th {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--accent);
+      padding: 8px 10px;
+      font-weight: 700;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+
+    table.data-table td {
+      padding: 7px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text);
+    }
+
+    table.data-table tr:hover {
+      background: rgba(0, 240, 255, 0.05);
+    }
+  </style>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="ppo_weights.js"></script>
+</head>
+<body>
+
+  <!-- Top HUD -->
+  <div class="top-hud">
+    <div class="hud-title">
+      <h1>
+        DEXIA 6-DOF MISSION SIMULATOR 
+        <span class="badge badge-geo" id="course-type-badge">⚙️ GEOMETRIC AUTOPILOT (정밀 제어)</span>
+        <span class="sync-status-badge" id="sync-badge">● LIVE ASSISTANT PIPELINE: ACTIVE</span>
+      </h1>
+      <p>Dynamic 3D Waypoint Generator · Continuous Infinite Cycles · Real-time AI Weight Streaming</p>
+    </div>
+
+    <!-- Camera Mode Selector -->
+    <div class="camera-bar">
+      <button class="cam-btn active" id="cam-free" onclick="setCameraMode('free')">🌐 Free Orbit (360°)</button>
+      <button class="cam-btn" id="cam-chase" onclick="setCameraMode('chase')">🎯 Chase Cam</button>
+      <button class="cam-btn" id="cam-fpv" onclick="setCameraMode('fpv')">🚁 FPV Cockpit</button>
+      <button class="cam-btn" id="cam-top" onclick="setCameraMode('top')">📐 Top-Down</button>
+    </div>
+  </div>
+
+  <!-- Left Control Panel -->
+  <div class="controls-panel">
+    <div class="panel-header">
+      <span>Pilot Brain Selector</span>
+      <span id="cycle-state-badge" style="color: var(--accent); font-weight: 800;">GEO ACTIVE</span>
+    </div>
+
+    <!-- 1-Click Toggle between AI Pilot & Geometric Rollback -->
+    <div class="pilot-switch-box">
+      <button class="btn-mode-switch active-geo" id="btn-mode-geo" onclick="switchPilotBrain('geo')">
+        ⚙️ 롤백 (정밀 오토파일럿)
+      </button>
+      <button class="btn-mode-switch" id="btn-mode-ai" onclick="switchPilotBrain('ai')">
+        🤖 AI Pilot (PPO 신경망)
+      </button>
+    </div>
+
+    <div class="mission-status-box">
+      <div class="status-row">
+        <span style="color: var(--text-muted)">Current State:</span>
+        <span id="txt-current-leg" style="font-weight: 700; color: #fff;">Cycle #1 · Leg 1/5</span>
+      </div>
+      <div class="status-row">
+        <span style="color: var(--text-muted)">Target Pos [X,Y,Z]:</span>
+        <span id="txt-current-target" style="color: var(--accent);">[0.0, 0.0, 2.0]</span>
+      </div>
+      <div class="status-row">
+        <span style="color: var(--text-muted)">Distance to Target:</span>
+        <span id="txt-dist-target" style="color: var(--accent-green); font-weight:700;">0.00 m</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="cycle-progress-fill"></div>
+      </div>
+    </div>
+
+    <!-- Dedicated AI Weights & Telemetry Inspector Button -->
+    <button class="btn-ai-inspector" onclick="toggleNeuralModal()">
+      <span>🧠 AI Weights & Detailed Flight Log</span>
+    </button>
+
+    <!-- Auto-Stop Toggle Switch -->
+    <button class="toggle-autostop-btn autostop-off" id="btn-toggle-autostop" onclick="toggleAutoStop()">
+      <span>⚙️ Auto-Stop Mode:</span>
+      <span id="txt-autostop-state" style="font-weight: 800;">OFF (Infinite Loop)</span>
+    </button>
+
+    <button class="btn-action-primary" id="btn-run-cycle" onclick="toggleFlightExecution()">
+      <span>⏸ Pause Flight</span>
+    </button>
+
+    <div class="btn-group">
+      <button class="hud-btn" onclick="generateNewRandomCourse(true)">🎲 New Random Course</button>
+      <button class="hud-btn" onclick="toggleAnalysisModal()">📊 View Table</button>
+    </div>
+
+    <div class="panel-header">
+      <span>Active 3D Waypoints</span>
+      <span id="txt-wp-count" style="font-size: 10px; color: var(--text-muted);">5 WPs</span>
+    </div>
+    <div class="waypoint-list-box" id="wp-list-ui">
+    </div>
+  </div>
+
+  <!-- Telemetry Right Panel -->
+  <div class="telemetry-panel">
+    <div class="panel-header">
+      <span>Realtime 6-DOF State</span>
+      <span id="cycle-count-text" style="color: var(--accent); font-size: 10px;">CYCLE #1</span>
+    </div>
+
+    <div class="telemetry-grid">
+      <div class="tele-item">
+        <div class="tele-label">Altitude (Z)</div>
+        <div class="tele-val" id="val-alt">1.50 m</div>
+      </div>
+      <div class="tele-item">
+        <div class="tele-label">Airspeed</div>
+        <div class="tele-val" id="val-speed">0.00 m/s</div>
+      </div>
+      <div class="tele-item">
+        <div class="tele-label">Position [X, Y]</div>
+        <div class="tele-val" id="val-pos">0.0, 0.0</div>
+      </div>
+      <div class="tele-item">
+        <div class="tele-label">Roll / Pitch</div>
+        <div class="tele-val" id="val-att">0.0° / 0.0°</div>
+      </div>
+      <div class="tele-item" style="grid-column: span 2;">
+        <div class="tele-label">Yaw Heading</div>
+        <div class="tele-val" id="val-yaw">0.0°</div>
+      </div>
+    </div>
+
+    <div class="panel-header">
+      <span>Rotor Thrusts (Newton)</span>
+      <span id="val-total-thrust" style="color: var(--accent)">5.88 N</span>
+    </div>
+
+    <div class="motors-container">
+      <div class="motor-meter">
+        <div class="motor-bar-bg"><div class="motor-bar-fill" id="m0-fill" style="height: 25%;"></div></div>
+        <div class="motor-name">M0 FR</div>
+        <div class="motor-val" id="m0-val">1.47N</div>
+      </div>
+      <div class="motor-meter">
+        <div class="motor-bar-bg"><div class="motor-bar-fill" id="m1-fill" style="height: 25%;"></div></div>
+        <div class="motor-name">M1 FL</div>
+        <div class="motor-val" id="m1-val">1.47N</div>
+      </div>
+      <div class="motor-meter">
+        <div class="motor-bar-bg"><div class="motor-bar-fill" id="m2-fill" style="height: 25%;"></div></div>
+        <div class="motor-name">M2 BL</div>
+        <div class="motor-val" id="m2-val">1.47N</div>
+      </div>
+      <div class="motor-meter">
+        <div class="motor-bar-bg"><div class="motor-bar-fill" id="m3-fill" style="height: 25%;"></div></div>
+        <div class="motor-name">M3 BR</div>
+        <div class="motor-val" id="m3-val">1.47N</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dedicated AI Neural Weights & Flight Inspector Modal -->
+  <div class="modal-overlay" id="neural-modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>
+          <span>🧠 PPO Neural AI Weights & Realtime Flight Inspector</span>
+          <span style="font-size: 11px; background: rgba(192, 132, 252, 0.15); color: var(--accent-purple); padding: 3px 8px; border-radius: 4px; border: 1px solid var(--accent-purple);">256x256 MULTI-LAYER PERCEPTRON</span>
+        </h2>
+        <button class="btn-small" onclick="toggleNeuralModal()">✕ Close Window</button>
+      </div>
+
+      <div class="ai-diag-grid">
+        <!-- 1. 16-D Observation Tensor -->
+        <div class="diag-section">
+          <div class="diag-title">
+            <span>1. Observation Tensor (16-D Input)</span>
+            <span style="color: var(--accent);">Shape: [16]</span>
+          </div>
+          <div class="tensor-val-list" id="diag-obs-list">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <!-- 2. Hidden Layer Activations -->
+        <div class="diag-section">
+          <div class="diag-title">
+            <span>2. Hidden Layers Activation (Tanh)</span>
+            <span style="color: var(--accent-purple);">Layer 1 & 2 (256 nodes)</span>
+          </div>
+          <div class="layer-stats-box">
+            <div class="layer-stat-item">
+              <div class="title">L1 Mean Act</div>
+              <div class="val" id="diag-l1-mean">0.00</div>
+            </div>
+            <div class="layer-stat-item">
+              <div class="title">L2 Mean Act</div>
+              <div class="val" id="diag-l2-mean">0.00</div>
+            </div>
+            <div class="layer-stat-item">
+              <div class="title">Saturated Nodes</div>
+              <div class="val" id="diag-sat-count" style="color: var(--accent-yellow);">0</div>
+            </div>
+          </div>
+          <div style="font-size: 9px; color: var(--text-muted); margin-top: 4px;">Layer 2 Activation Distribution Heatmap:</div>
+          <div class="heatmap-strip" id="diag-heatmap-strip"></div>
+        </div>
+
+        <!-- 3. Motor Action Logits & Weight Bias -->
+        <div class="diag-section">
+          <div class="diag-title">
+            <span>3. Output Policy Layer (Wpi * h2 + Bpi)</span>
+            <span style="color: var(--accent-green);">Action [-1, 1]</span>
+          </div>
+          <div class="action-contrib-box">
+            <div class="action-card">
+              <span class="motor-id">M0 (FR)</span>
+              <span>Raw: <b id="diag-a0-raw">0.00</b></span>
+              <span>Bias: <b>-0.52</b></span>
+              <span style="color: var(--accent);">Thrust: <b id="diag-m0-t">1.47N</b></span>
+            </div>
+            <div class="action-card">
+              <span class="motor-id">M1 (FL)</span>
+              <span>Raw: <b id="diag-a1-raw">0.00</b></span>
+              <span>Bias: <b>-0.74</b></span>
+              <span style="color: var(--accent);">Thrust: <b id="diag-m1-t">1.47N</b></span>
+            </div>
+            <div class="action-card">
+              <span class="motor-id">M2 (BL)</span>
+              <span>Raw: <b id="diag-a2-raw">0.00</b></span>
+              <span>Bias: <b>-0.55</b></span>
+              <span style="color: var(--accent);">Thrust: <b id="diag-m2-t">1.47N</b></span>
+            </div>
+            <div class="action-card">
+              <span class="motor-id">M3 (BR)</span>
+              <span>Raw: <b id="diag-a3-raw">0.00</b></span>
+              <span>Bias: <b>-0.77</b></span>
+              <span style="color: var(--accent);">Thrust: <b id="diag-m3-t">1.47N</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Dynamics & Live Pipeline Diagnosis -->
+        <div class="diag-section">
+          <div class="diag-title">
+            <span>4. Flight Dynamics & Assistant Pipeline</span>
+            <span style="color: var(--accent-green);">LIVE STREAMING</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11px;">
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Yaw Differential Torque:</span>
+              <span id="diag-diff-yaw" style="color: var(--accent-yellow); font-weight:700;">+0.000 Nm</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Flight Envelope Safety Governor:</span>
+              <span style="color: var(--accent-green); font-weight:700;">ACTIVE (Max 35° Tilt)</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Assistant Realtime Sync Target:</span>
+              <span style="color: var(--accent); font-weight:700;">/api/telemetry (2 Hz)</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted)">Last Payload Sent:</span>
+              <span id="diag-last-sync-time" style="color: #fff;">0.00s ago</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px;">
+        <span style="font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">
+          * Live Neural Diagnostics & 6-DOF Real-time Telemetry Streamed to AI Assistant Workspace
+        </span>
+        <button class="btn-small" style="background: var(--accent-purple); color: #000; font-weight: 700;" onclick="toggleNeuralModal()">Return to Flight</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Flight Analysis Table Modal -->
+  <div class="analysis-overlay" id="analysis-overlay">
+    <div class="analysis-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding-bottom: 8px;">
+      <h2 style="font-size: 15px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
+        <span>📊 Continuous Random 3D Mission Analytics Report</span>
+        <span class="badge-complete" id="analysis-badge">LIVE TELEMETRY AUDIT</span>
+      </h2>
+      <button class="btn-small" onclick="toggleAnalysisModal()">✕ Close Table</button>
+    </div>
+
+    <!-- Summary KPI Cards -->
+    <div class="kpi-row">
+      <div class="kpi-card">
+        <div class="kpi-title">Completed Cycles</div>
+        <div class="kpi-value" id="kpi-cycle-id" style="color: var(--accent);">0 Cycles</div>
+        <div class="kpi-sub" id="kpi-total-time">Total: 0.0s</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Mean Arrival Accuracy</div>
+        <div class="kpi-value" id="kpi-rmse" style="color: var(--accent-green);">0.00 cm</div>
+        <div class="kpi-sub">Precision Target Hit</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Max Airspeed</div>
+        <div class="kpi-value" id="kpi-max-speed">0.00 m/s</div>
+        <div class="kpi-sub" id="kpi-avg-speed">Avg: 0.00 m/s</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Max Tilt (Roll/Pitch)</div>
+        <div class="kpi-value" id="kpi-max-tilt">0.0°</div>
+        <div class="kpi-sub">Limit: < 25.0°</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Avg Power (Thrust)</div>
+        <div class="kpi-value" id="kpi-power">0.00 N</div>
+        <div class="kpi-sub">Hover: 5.88 N</div>
+      </div>
+    </div>
+
+    <!-- Leg Table -->
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Cycle / Leg</th>
+            <th>Pilot Brain</th>
+            <th>Target 3D Coord [X, Y, Z]</th>
+            <th>Target Yaw</th>
+            <th>Flight Time</th>
+            <th>Final Reached Pos [X, Y, Z]</th>
+            <th>Final Error</th>
+            <th>Avg Thrust</th>
+            <th>Max Tilt</th>
+            <th>Navigation Status</th>
+          </tr>
+        </thead>
+        <tbody id="analysis-table-body">
+        </tbody>
+      </table>
+    </div>
+
+    <div class="analysis-footer" style="display: flex; justify-content: space-between; align-items: center; padding-top: 4px;">
+      <div style="font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">
+        * Dexia 6-DOF High-Precision Flight Dynamics & Realtime Closed-Loop Controller
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn-small" onclick="exportCSV()">📥 Export CSV Log</button>
+        <button class="btn-small" style="background: var(--accent); color: #000; font-weight: 700;" onclick="toggleAnalysisModal()">Continue Flight View</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="canvas-container"></div>
+
+  <script>
+    // -------------------------------------------------------------
+    // Physical Constants & Safety Clamps
+    // -------------------------------------------------------------
+    const MASS = 0.6;
+    const GRAVITY = 9.81;
+    const ARM_LENGTH = 0.11;
+    const MAX_THRUST = 7.0;
+    const KAPPA = 0.0201;
+    const DRAG_COEFF = 0.22;
+    const ROT_DAMP_COEFF = 0.12;
+    const HOVER_THRUST = (MASS * GRAVITY) / 4.0; // 1.4715 N
+
+    function wrapAngle(rad) {
+      rad = (rad + Math.PI) % (2 * Math.PI);
+      if (rad < 0) rad += 2 * Math.PI;
+      return rad - Math.PI;
+    }
+
+    let pos = new THREE.Vector3(0, 0, 1.5);
+    let prevPos = pos.clone();
+    let vel = new THREE.Vector3(0, 0, 0);
+    let euler = new THREE.Euler(0, 0, 0, 'ZYX');
+    let quat = new THREE.Quaternion();
+    let omega = new THREE.Vector3(0, 0, 0);
+
+    let motorThrusts = [HOVER_THRUST, HOVER_THRUST, HOVER_THRUST, HOVER_THRUST];
+    let prevActions = [0, 0, 0, 0];
+    let activePilot = 'geo'; // Default: Precision Geometric Autopilot (Rollback)
+    let cameraMode = 'free';
+
+    // Realtime Neural Diagnostics Cache
+    let currentNeuralDiagnostics = {
+      obs16: new Array(16).fill(0),
+      l1_mean: 0,
+      l2_mean: 0,
+      saturated_count: 0,
+      h2_sample: new Array(32).fill(0),
+      rawActions: [0, 0, 0, 0],
+      motorThrusts: [1.47, 1.47, 1.47, 1.47],
+      diff_yaw_torque: 0,
+      timestamp: Date.now()
+    };
+
+    // Cycle & Auto-Stop State
+    let isRunningCycle = true;
+    let autoStopEnabled = false;
+    let cycleCount = 1;
+    let totalMissionTime = 0;
+    let simTime = 0;
+    let currentLegIdx = 0;
+    let legTimer = 0;
+    const LEG_DURATION = 3.2;
+
+    let missionLegs = [];
+    let missionHistory = [];
+    let cumulativeLegResults = [];
+
+    // -------------------------------------------------------------
+    // Physical 3D Random Waypoint Generator
+    // -------------------------------------------------------------
+    function generatePhysicalRandomWaypoints(startPos, numWaypoints = 4) {
+      const legs = [];
+      let prevTgt = startPos ? startPos.clone() : new THREE.Vector3(0.0, 0.0, 2.0);
+
+      for (let i = 1; i <= numWaypoints; i++) {
+        let candidate;
+        let dist = 0;
+        let attempts = 0;
+
+        while ((dist < 1.8 || dist > 4.5) && attempts < 30) {
+          const rx = (Math.random() * 6.0 - 3.0);
+          const ry = (Math.random() * 6.0 - 3.0);
+          const rz = (Math.random() * 2.2 + 1.2); // Z between 1.2m and 3.4m
+          candidate = new THREE.Vector3(rx, ry, rz);
+          dist = candidate.distanceTo(prevTgt);
+          attempts++;
+        }
+
+        const rYaw = (Math.random() * Math.PI * 2) - Math.PI;
+
+        legs.push({
+          name: `Rand WP ${i}`,
+          target: candidate,
+          yaw: rYaw
+        });
+
+        prevTgt = candidate.clone();
+      }
+
+      legs.push({
+        name: "Center Transit",
+        target: new THREE.Vector3((Math.random()*0.8 - 0.4), (Math.random()*0.8 - 0.4), 1.8),
+        yaw: 0.0
+      });
+
+      return legs;
+    }
+
+    function updateWaypointUIList() {
+      const box = document.getElementById('wp-list-ui');
+      if (!box) return;
+      box.innerHTML = '';
+      document.getElementById('txt-wp-count').textContent = `${missionLegs.length} Legs`;
+
+      missionLegs.forEach((leg, i) => {
+        const item = document.createElement('div');
+        item.className = `wp-item ${i === currentLegIdx ? 'active' : ''}`;
+        item.id = `wp-item-${i}`;
+        item.innerHTML = `
+          <span><b>L${i+1}</b> ${leg.name}</span>
+          <span>[${leg.target.x.toFixed(1)}, ${leg.target.y.toFixed(1)}, ${leg.target.z.toFixed(1)}]</span>
+        `;
+        box.appendChild(item);
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Flight Controllers & Neural Diagnostics Calculation
+    // -------------------------------------------------------------
+    function calculateGeometricThrusts(target, targetYaw) {
+      const posErr = new THREE.Vector3().subVectors(target, pos);
+      const a_cmd = new THREE.Vector3(
+        4.5 * posErr.x - 3.4 * vel.x,
+        4.5 * posErr.y - 3.4 * vel.y,
+        6.8 * posErr.z - 4.8 * vel.z + GRAVITY
+      );
+
+      const cosTilt = Math.max(Math.cos(euler.x) * Math.cos(euler.y), 0.7);
+      const thrustTotal = Math.min(Math.max((MASS * a_cmd.z) / cosTilt, 0.5), 4 * MAX_THRUST * 0.75);
+
+      const cy = Math.cos(euler.z), sy = Math.sin(euler.z);
+      const a_fwd = -a_cmd.x * sy + a_cmd.y * cy;
+      const a_right = a_cmd.x * cy + a_cmd.y * sy;
+
+      const rollDes = THREE.MathUtils.clamp(-a_fwd / GRAVITY, -0.40, 0.40);
+      const pitchDes = THREE.MathUtils.clamp(a_right / GRAVITY, -0.40, 0.40);
+      const yawDes = targetYaw;
+
+      const eRoll = rollDes - euler.x;
+      const ePitch = pitchDes - euler.y;
+      const eYaw = wrapAngle(yawDes - euler.z);
+
+      const tau_x = 14.0 * eRoll - 2.2 * omega.x;
+      const tau_y = 14.0 * ePitch - 2.2 * omega.y;
+      const tau_z = 6.0 * eYaw - 1.2 * omega.z;
+
+      const tBase = thrustTotal / 4.0;
+      const max_d_att = 0.55 * tBase;
+      const dt_x = THREE.MathUtils.clamp(tau_x / (4.0 * ARM_LENGTH), -max_d_att, max_d_att);
+      const dt_y = THREE.MathUtils.clamp(tau_y / (4.0 * ARM_LENGTH), -max_d_att, max_d_att);
+      const dt_z = THREE.MathUtils.clamp(tau_z / (4.0 * KAPPA), -0.25 * tBase, 0.25 * tBase);
+
+      const T0 = tBase + dt_x - dt_y + dt_z;
+      const T1 = tBase + dt_x + dt_y - dt_z;
+      const T2 = tBase - dt_x + dt_y + dt_z;
+      const T3 = tBase - dt_x - dt_y - dt_z;
+
+      return [
+        THREE.MathUtils.clamp(T0, 0, MAX_THRUST),
+        THREE.MathUtils.clamp(T1, 0, MAX_THRUST),
+        THREE.MathUtils.clamp(T2, 0, MAX_THRUST),
+        THREE.MathUtils.clamp(T3, 0, MAX_THRUST)
+      ];
+    }
+
+    function forwardNeuralInferenceWithDiagnostics(target, targetYaw) {
+      const posErr = new THREE.Vector3().subVectors(target, pos);
+      const obs16 = [
+        THREE.MathUtils.clamp(posErr.x, -3.0, 3.0),
+        THREE.MathUtils.clamp(posErr.y, -3.0, 3.0),
+        THREE.MathUtils.clamp(posErr.z, -2.0, 2.0),
+        THREE.MathUtils.clamp(vel.x, -4.0, 4.0),
+        THREE.MathUtils.clamp(vel.y, -4.0, 4.0),
+        THREE.MathUtils.clamp(vel.z, -4.0, 4.0),
+        wrapAngle(euler.x),
+        wrapAngle(euler.y),
+        wrapAngle(euler.z - targetYaw),
+        THREE.MathUtils.clamp(omega.x, -6.0, 6.0),
+        THREE.MathUtils.clamp(omega.y, -6.0, 6.0),
+        THREE.MathUtils.clamp(omega.z, -6.0, 6.0),
+        prevActions[0], prevActions[1], prevActions[2], prevActions[3]
+      ];
+
+      if (!window.PPO_WEIGHTS) {
+        return calculateGeometricThrusts(target, targetYaw);
+      }
+
+      const { w0, b0, w1, b1, wpi, bpi } = window.PPO_WEIGHTS;
+
+      // Layer 1
+      let l1Sum = 0;
+      const h1 = new Float32Array(256);
+      for (let i = 0; i < 256; i++) {
+        let sum = b0[i];
+        const row = w0[i];
+        for (let j = 0; j < 16; j++) sum += row[j] * obs16[j];
+        h1[i] = Math.tanh(sum);
+        l1Sum += Math.abs(h1[i]);
+      }
+
+      // Layer 2
+      let l2Sum = 0;
+      let satCount = 0;
+      const h2 = new Float32Array(256);
+      for (let i = 0; i < 256; i++) {
+        let sum = b1[i];
+        const row = w1[i];
+        for (let j = 0; j < 256; j++) sum += row[j] * h1[j];
+        h2[i] = Math.tanh(sum);
+        l2Sum += Math.abs(h2[i]);
+        if (Math.abs(h2[i]) > 0.95) satCount++;
+      }
+
+      // Output Layer
+      const rawA = new Float32Array(4);
+      for (let i = 0; i < 4; i++) {
+        let sum = bpi[i];
+        const row = wpi[i];
+        for (let j = 0; j < 256; j++) sum += row[j] * h2[j];
+        rawA[i] = Math.min(Math.max(sum, -1.0), 1.0);
+      }
+
+      prevActions = [...rawA];
+
+      const baseGeo = calculateGeometricThrusts(target, targetYaw);
+      const aiDelta = rawA.map(a => a * 0.8);
+
+      const finalThrusts = [
+        THREE.MathUtils.clamp(baseGeo[0] + aiDelta[0], 0, MAX_THRUST),
+        THREE.MathUtils.clamp(baseGeo[1] + aiDelta[1], 0, MAX_THRUST),
+        THREE.MathUtils.clamp(baseGeo[2] + aiDelta[2], 0, MAX_THRUST),
+        THREE.MathUtils.clamp(baseGeo[3] + aiDelta[3], 0, MAX_THRUST)
+      ];
+
+      // Update Diagnostics Cache
+      currentNeuralDiagnostics = {
+        obs16: obs16,
+        l1_mean: l1Sum / 256,
+        l2_mean: l2Sum / 256,
+        saturated_count: satCount,
+        h2_sample: Array.from(h2.slice(0, 32)),
+        rawActions: Array.from(rawA),
+        motorThrusts: finalThrusts,
+        diff_yaw_torque: KAPPA * (finalThrusts[0] - finalThrusts[1] + finalThrusts[2] - finalThrusts[3]),
+        timestamp: Date.now()
+      };
+
+      return finalThrusts;
+    }
+
+    // -------------------------------------------------------------
+    // Realtime AI Assistant Streaming Pipeline (POST /api/telemetry)
+    // -------------------------------------------------------------
+    let lastStreamTime = 0;
+
+    function streamLiveTelemetryToAssistant() {
+      const now = performance.now();
+      if (now - lastStreamTime < 500) return; // 2Hz stream
+      lastStreamTime = now;
+
+      const payload = {
+        cycle: cycleCount,
+        pilot: activePilot.toUpperCase(),
+        simTime: simTime,
+        totalMissionTime: totalMissionTime,
+        drone: {
+          position: [pos.x, pos.y, pos.z],
+          velocity: [vel.x, vel.y, vel.z],
+          airspeed: vel.length(),
+          euler_deg: [euler.x * 57.3, euler.y * 57.3, euler.z * 57.3],
+          omega: [omega.x, omega.y, omega.z],
+          motor_thrusts: motorThrusts,
+          total_thrust: motorThrusts.reduce((a, b) => a + b, 0)
+        },
+        current_mission_leg: missionLegs[currentLegIdx] ? {
+          legIdx: currentLegIdx + 1,
+          name: missionLegs[currentLegIdx].name,
+          target: [missionLegs[currentLegIdx].target.x, missionLegs[currentLegIdx].target.y, missionLegs[currentLegIdx].target.z],
+          targetYaw_deg: (missionLegs[currentLegIdx].yaw * 57.3),
+          distToTarget: pos.distanceTo(missionLegs[currentLegIdx].target)
+        } : null,
+        neural_diagnostics: currentNeuralDiagnostics,
+        summary_stats: {
+          completed_legs: cumulativeLegResults.length,
+          mean_error_cm: cumulativeLegResults.length ? (cumulativeLegResults.reduce((a, b) => a + parseFloat(b.posErrorCm), 0) / cumulativeLegResults.length).toFixed(1) : "0.0",
+          latest_legs: cumulativeLegResults.slice(-5)
+        }
+      };
+
+      fetch('/api/telemetry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(res => {
+        if (res.ok) {
+          const syncBadge = document.getElementById('sync-badge');
+          if (syncBadge) {
+            syncBadge.className = 'sync-status-badge';
+            syncBadge.textContent = '● LIVE ASSISTANT PIPELINE: ACTIVE';
+          }
+        }
+      })
+      .catch(err => {
+        const syncBadge = document.getElementById('sync-badge');
+        if (syncBadge) {
+          syncBadge.className = 'sync-status-badge offline';
+          syncBadge.textContent = '○ ASSISTANT PIPELINE: OFFLINE';
+        }
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Three.js Scene Setup (Z-UP)
+    // -------------------------------------------------------------
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x07090e);
+    scene.fog = new THREE.FogExp2(0x07090e, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 500);
+    camera.position.set(5.5, -5.5, 4.5);
+    camera.up.set(0, 0, 1);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.target.copy(pos);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dirLight = new THREE.DirectionalLight(0x00f0ff, 1.2);
+    dirLight.position.set(15, 15, 25);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    const gridHelper = new THREE.GridHelper(60, 60, 0x00f0ff, 0x1e293b);
+    gridHelper.rotation.x = Math.PI / 2;
+    scene.add(gridHelper);
+
+    const floorGeo = new THREE.PlaneGeometry(120, 120);
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x0a0f1d, roughness: 0.8 });
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    const boxGeo = new THREE.BoxGeometry(7.0, 7.0, 2.5);
+    const boxLine = new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo), new THREE.LineBasicMaterial({ color: 0x9333ea, transparent: true, opacity: 0.25 }));
+    boxLine.position.set(0, 0, 2.45);
+    scene.add(boxLine);
+
+    // Drone 3D Group
+    const droneGroup = new THREE.Group();
+    const coreMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 0.12, 0.03),
+      new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.2 })
+    );
+    droneGroup.add(coreMesh);
+
+    const noseMesh = new THREE.Mesh(
+      new THREE.ConeGeometry(0.02, 0.05, 16),
+      new THREE.MeshBasicMaterial({ color: 0x00ff88 })
+    );
+    noseMesh.rotation.x = Math.PI / 2;
+    noseMesh.position.set(0, 0.08, 0);
+    droneGroup.add(noseMesh);
+
+    const rotors = [];
+    const motorSites = [
+      { x: ARM_LENGTH, y: ARM_LENGTH, color: 0xff3366 },
+      { x: -ARM_LENGTH, y: ARM_LENGTH, color: 0x00ff88 },
+      { x: -ARM_LENGTH, y: -ARM_LENGTH, color: 0x00f0ff },
+      { x: ARM_LENGTH, y: -ARM_LENGTH, color: 0xffbb00 }
+    ];
+
+    motorSites.forEach((site) => {
+      const arm = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.008, 0.008, ARM_LENGTH * 1.414, 8),
+        new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.9, roughness: 0.3 })
+      );
+      arm.position.set(site.x / 2, site.y / 2, 0);
+      arm.rotation.z = Math.atan2(site.y, site.x) + Math.PI / 2;
+      arm.rotation.x = Math.PI / 2;
+      droneGroup.add(arm);
+
+      const propGroup = new THREE.Group();
+      const blade1 = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.015, 0.002), new THREE.MeshStandardMaterial({ color: site.color }));
+      const blade2 = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.015, 0.002), new THREE.MeshStandardMaterial({ color: site.color }));
+      blade2.rotation.z = Math.PI / 2;
+      propGroup.add(blade1, blade2);
+      propGroup.position.set(site.x, site.y, 0.022);
+
+      droneGroup.add(propGroup);
+      rotors.push(propGroup);
+    });
+
+    scene.add(droneGroup);
+
+    // Trajectory
+    const trailMax = 1600;
+    const trailPositions = new Float32Array(trailMax * 3);
+    const trailGeo = new THREE.BufferGeometry();
+    trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+    const trailLine = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.7 }));
+    scene.add(trailLine);
+    let trailCount = 0;
+
+    const wpVisualGroup = new THREE.Group();
+    scene.add(wpVisualGroup);
+
+    const targetLinePositions = new Float32Array(6);
+    const targetLineGeo = new THREE.BufferGeometry();
+    targetLineGeo.setAttribute('position', new THREE.BufferAttribute(targetLinePositions, 3));
+    const targetLine = new THREE.Line(targetLineGeo, new THREE.LineBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.6 }));
+    scene.add(targetLine);
+
+    function rebuildWaypointMarkers() {
+      while (wpVisualGroup.children.length > 0) {
+        wpVisualGroup.remove(wpVisualGroup.children[0]);
+      }
+
+      missionLegs.forEach((leg, i) => {
+        const wpMesh = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.14),
+          new THREE.MeshStandardMaterial({
+            color: i === 0 ? 0x00ff88 : (i === missionLegs.length - 1 ? 0x00f0ff : 0xc084fc),
+            wireframe: true
+          })
+        );
+        wpMesh.position.copy(leg.target);
+        wpVisualGroup.add(wpMesh);
+
+        const dropLineGeo = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(leg.target.x, leg.target.y, 0),
+          leg.target
+        ]);
+        const dropLine = new THREE.Line(dropLineGeo, new THREE.LineBasicMaterial({ color: 0x475569, transparent: true, opacity: 0.4 }));
+        wpVisualGroup.add(dropLine);
+      });
+      updateWaypointUIList();
+    }
+
+    // -------------------------------------------------------------
+    // 6-DOF Physics Integration Step
+    // -------------------------------------------------------------
+    let currentLegThrustSum = 0;
+    let currentLegMaxTilt = 0;
+    let currentLegSteps = 0;
+
+    function physicsStep(dt) {
+      if (!isRunningCycle) return;
+
+      simTime += dt;
+      totalMissionTime += dt;
+      legTimer += dt;
+      currentLegSteps++;
+
+      const activeLeg = missionLegs[currentLegIdx];
+      if (!activeLeg) return;
+      const target = activeLeg.target;
+      const targetYaw = activeLeg.yaw;
+
+      // 1. Controller Output
+      if (activePilot === 'ai') {
+        motorThrusts = forwardNeuralInferenceWithDiagnostics(target, targetYaw);
+      } else {
+        motorThrusts = calculateGeometricThrusts(target, targetYaw);
+      }
+
+      const tiltDeg = Math.max(Math.abs(euler.x), Math.abs(euler.y)) * 57.2958;
+      const totalThrust = motorThrusts.reduce((a, b) => a + b, 0);
+      currentLegThrustSum += totalThrust;
+      currentLegMaxTilt = Math.max(currentLegMaxTilt, tiltDeg);
+
+      const posErr = new THREE.Vector3().subVectors(target, pos);
+
+      missionHistory.push({
+        cycle: cycleCount,
+        pilot: activePilot.toUpperCase(),
+        time: totalMissionTime,
+        leg: currentLegIdx,
+        pos: pos.clone(),
+        target: target.clone(),
+        posErr: posErr.length(),
+        vel: vel.clone(),
+        speed: vel.length(),
+        euler: euler.clone(),
+        tiltDeg: tiltDeg,
+        thrusts: [...motorThrusts],
+        totalThrust: totalThrust
+      });
+
+      // 2. Newton-Euler Equations of Motion
+      const Fz_body = totalThrust;
+      const tau_body_x = ARM_LENGTH * (motorThrusts[0] + motorThrusts[1] - motorThrusts[2] - motorThrusts[3]);
+      const tau_body_y = ARM_LENGTH * (-motorThrusts[0] + motorThrusts[1] + motorThrusts[2] - motorThrusts[3]);
+      const tau_body_z = KAPPA * (motorThrusts[0] - motorThrusts[1] + motorThrusts[2] - motorThrusts[3]);
+
+      const Ixx = 0.003, Iyy = 0.003, Izz = 0.005;
+      const alpha_x = (tau_body_x - (Izz - Iyy) * omega.y * omega.z - ROT_DAMP_COEFF * omega.x) / Ixx;
+      const alpha_y = (tau_body_y - (Ixx - Izz) * omega.z * omega.x - ROT_DAMP_COEFF * omega.y) / Iyy;
+      const alpha_z = (tau_body_z - (Iyy - Ixx) * omega.x * omega.y - ROT_DAMP_COEFF * omega.z) / Izz;
+
+      omega.x += alpha_x * dt;
+      omega.y += alpha_y * dt;
+      omega.z += alpha_z * dt;
+
+      euler.x = wrapAngle(euler.x + omega.x * dt);
+      euler.y = wrapAngle(euler.y + omega.y * dt);
+      euler.z = wrapAngle(euler.z + omega.z * dt);
+      quat.setFromEuler(euler);
+
+      const thrustVecWorld = new THREE.Vector3(0, 0, Fz_body).applyQuaternion(quat);
+      const totalForceWorld = new THREE.Vector3(
+        thrustVecWorld.x - DRAG_COEFF * vel.x,
+        thrustVecWorld.y - DRAG_COEFF * vel.y,
+        thrustVecWorld.z - MASS * GRAVITY - DRAG_COEFF * vel.z
+      );
+
+      const accel = totalForceWorld.divideScalar(MASS);
+      vel.addScaledVector(accel, dt);
+      pos.addScaledVector(vel, dt);
+
+      // Floor & Envelope Safety Clamp
+      if (pos.z < 0.1) {
+        pos.z = 0.1;
+        if (vel.z < 0) vel.z = 0;
+      }
+      pos.x = THREE.MathUtils.clamp(pos.x, -5.0, 5.0);
+      pos.y = THREE.MathUtils.clamp(pos.y, -5.0, 5.0);
+
+      // Check Target Reached or Leg Timeout
+      const distToTarget = posErr.length();
+      if (legTimer >= LEG_DURATION || (distToTarget < 0.18 && legTimer > 1.0)) {
+        cumulativeLegResults.push({
+          cycle: cycleCount,
+          pilot: activePilot.toUpperCase(),
+          legIdx: currentLegIdx + 1,
+          name: activeLeg.name,
+          target: target.clone(),
+          targetYaw: (activeLeg.yaw * 57.3).toFixed(0),
+          duration: legTimer,
+          arrivalPos: pos.clone(),
+          posErrorCm: (distToTarget * 100).toFixed(1),
+          avgThrust: (currentLegThrustSum / currentLegSteps).toFixed(2),
+          maxTilt: currentLegMaxTilt.toFixed(1)
+        });
+
+        legTimer = 0;
+        currentLegThrustSum = 0;
+        currentLegMaxTilt = 0;
+        currentLegSteps = 0;
+        currentLegIdx++;
+
+        if (currentLegIdx >= missionLegs.length) {
+          handleCycleCompletion();
+        } else {
+          updateWaypointHighlight();
+        }
+      }
+
+      // Stream live telemetry
+      streamLiveTelemetryToAssistant();
+    }
+
+    function updateWaypointHighlight() {
+      document.querySelectorAll('.wp-item').forEach((el, idx) => {
+        el.classList.toggle('active', idx === currentLegIdx);
+      });
+    }
+
+    // -------------------------------------------------------------
+    // UI Modal & Inspector Controls
+    // -------------------------------------------------------------
+    function switchPilotBrain(mode) {
+      activePilot = mode;
+      const bBadge = document.getElementById('course-type-badge');
+      const sBadge = document.getElementById('cycle-state-badge');
+      const bAI = document.getElementById('btn-mode-ai');
+      const bGeo = document.getElementById('btn-mode-geo');
+
+      if (mode === 'ai') {
+        bAI.className = 'btn-mode-switch active-ai';
+        bGeo.className = 'btn-mode-switch';
+        bBadge.className = 'badge badge-ai';
+        bBadge.textContent = '🤖 PPO NEURAL AI PILOT';
+        sBadge.textContent = 'AI ACTIVE';
+        sBadge.style.color = 'var(--accent-purple)';
+      } else {
+        bGeo.className = 'btn-mode-switch active-geo';
+        bAI.className = 'btn-mode-switch';
+        bBadge.className = 'badge badge-geo';
+        bBadge.textContent = '⚙️ GEOMETRIC AUTOPILOT (정밀 제어)';
+        sBadge.textContent = 'GEO ACTIVE';
+        sBadge.style.color = 'var(--accent)';
+      }
+    }
+
+    function toggleNeuralModal() {
+      const modal = document.getElementById('neural-modal-overlay');
+      modal.classList.toggle('show');
+      if (modal.classList.contains('show')) {
+        updateNeuralModalUI();
+      }
+    }
+
+    function updateNeuralModalUI() {
+      const d = currentNeuralDiagnostics;
+      // 1. Observation vector list
+      const obsNames = [
+        'posErr.x', 'posErr.y', 'posErr.z',
+        'vel.x', 'vel.y', 'vel.z',
+        'roll', 'pitch', 'yaw_err',
+        'omega.x', 'omega.y', 'omega.z',
+        'prev.a0', 'prev.a1', 'prev.a2', 'prev.a3'
+      ];
+      const obsBox = document.getElementById('diag-obs-list');
+      if (obsBox) {
+        obsBox.innerHTML = '';
+        d.obs16.forEach((val, i) => {
+          const cell = document.createElement('div');
+          cell.className = 'tensor-cell';
+          cell.innerHTML = `
+            <span class="lbl">[${i}] ${obsNames[i]}</span>
+            <span class="val">${typeof val === 'number' ? val.toFixed(2) : val}</span>
+          `;
+          obsBox.appendChild(cell);
+        });
+      }
+
+      // 2. Activations
+      document.getElementById('diag-l1-mean').textContent = d.l1_mean.toFixed(3);
+      document.getElementById('diag-l2-mean').textContent = d.l2_mean.toFixed(3);
+      document.getElementById('diag-sat-count').textContent = d.saturated_count;
+
+      const strip = document.getElementById('diag-heatmap-strip');
+      if (strip) {
+        strip.innerHTML = '';
+        d.h2_sample.forEach(val => {
+          const bar = document.createElement('div');
+          bar.className = 'heatmap-bar';
+          const intensity = Math.abs(val);
+          const color = val >= 0 ? `rgba(192, 132, 252, ${intensity})` : `rgba(0, 240, 255, ${intensity})`;
+          bar.style.backgroundColor = color;
+          strip.appendChild(bar);
+        });
+      }
+
+      // 3. Actions
+      document.getElementById('diag-a0-raw').textContent = d.rawActions[0].toFixed(2);
+      document.getElementById('diag-a1-raw').textContent = d.rawActions[1].toFixed(2);
+      document.getElementById('diag-a2-raw').textContent = d.rawActions[2].toFixed(2);
+      document.getElementById('diag-a3-raw').textContent = d.rawActions[3].toFixed(2);
+
+      document.getElementById('diag-m0-t').textContent = d.motorThrusts[0].toFixed(2) + 'N';
+      document.getElementById('diag-m1-t').textContent = d.motorThrusts[1].toFixed(2) + 'N';
+      document.getElementById('diag-m2-t').textContent = d.motorThrusts[2].toFixed(2) + 'N';
+      document.getElementById('diag-m3-t').textContent = d.motorThrusts[3].toFixed(2) + 'N';
+
+      document.getElementById('diag-diff-yaw').textContent = (d.diff_yaw_torque > 0 ? '+' : '') + d.diff_yaw_torque.toFixed(4) + ' Nm';
+    }
+
+    function toggleFlightExecution() {
+      if (isRunningCycle) {
+        isRunningCycle = false;
+        document.getElementById('btn-run-cycle').innerHTML = '<span>▶ Resume Flight</span>';
+      } else {
+        isRunningCycle = true;
+        document.getElementById('btn-run-cycle').innerHTML = '<span>⏸ Pause Flight</span>';
+        document.getElementById('analysis-overlay').classList.remove('show');
+      }
+    }
+
+    function toggleAutoStop() {
+      autoStopEnabled = !autoStopEnabled;
+      const btn = document.getElementById('btn-toggle-autostop');
+      const txt = document.getElementById('txt-autostop-state');
+
+      if (autoStopEnabled) {
+        btn.className = 'toggle-autostop-btn autostop-on';
+        txt.textContent = 'ON (1-Cycle Stop)';
+      } else {
+        btn.className = 'toggle-autostop-btn autostop-off';
+        txt.textContent = 'OFF (Infinite Loop)';
+      }
+    }
+
+    function handleCycleCompletion() {
+      buildAnalysisTable();
+
+      if (autoStopEnabled) {
+        isRunningCycle = false;
+        document.getElementById('btn-run-cycle').innerHTML = '<span>🎲 Next Random Cycle</span>';
+
+        setTimeout(() => {
+          document.getElementById('analysis-overlay').classList.add('show');
+        }, 300);
+
+      } else {
+        cycleCount++;
+        currentLegIdx = 0;
+        legTimer = 0;
+        simTime = 0;
+
+        missionLegs = generatePhysicalRandomWaypoints(pos, 4);
+        rebuildWaypointMarkers();
+
+        document.getElementById('cycle-count-text').textContent = `CYCLE #${cycleCount}`;
+      }
+    }
+
+    function generateNewRandomCourse(resetPos = false) {
+      if (resetPos) {
+        pos.set(0, 0, 1.5);
+        prevPos.copy(pos);
+        vel.set(0, 0, 0);
+        euler.set(0, 0, 0);
+        omega.set(0, 0, 0);
+      }
+      missionLegs = generatePhysicalRandomWaypoints(pos, 4);
+      currentLegIdx = 0;
+      legTimer = 0;
+      simTime = 0;
+      rebuildWaypointMarkers();
+    }
+
+    function buildAnalysisTable() {
+      if (cumulativeLegResults.length === 0) return;
+
+      const speeds = missionHistory.map(h => h.speed);
+      const maxSpeed = speeds.length ? Math.max(...speeds) : 0;
+      const avgSpeed = speeds.length ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
+
+      const errors = cumulativeLegResults.map(r => parseFloat(r.posErrorCm));
+      const meanError = errors.reduce((a, b) => a + b, 0) / (errors.length || 1);
+
+      const tilts = missionHistory.map(h => h.tiltDeg);
+      const maxTilt = tilts.length ? Math.max(...tilts) : 0;
+
+      const thrusts = missionHistory.map(h => h.totalThrust);
+      const avgThrust = thrusts.length ? thrusts.reduce((a, b) => a + b, 0) / thrusts.length : 0;
+
+      document.getElementById('kpi-cycle-id').textContent = `${cycleCount} Cycles (${cumulativeLegResults.length} Legs)`;
+      document.getElementById('kpi-total-time').textContent = `Total: ${totalMissionTime.toFixed(1)}s`;
+      document.getElementById('kpi-rmse').textContent = meanError.toFixed(1) + ' cm';
+      document.getElementById('kpi-max-speed').textContent = maxSpeed.toFixed(2) + ' m/s';
+      document.getElementById('kpi-avg-speed').textContent = 'Avg: ' + avgSpeed.toFixed(2) + ' m/s';
+      document.getElementById('kpi-max-tilt').textContent = maxTilt.toFixed(1) + '°';
+      document.getElementById('kpi-power').textContent = avgThrust.toFixed(2) + ' N';
+
+      const tbody = document.getElementById('analysis-table-body');
+      tbody.innerHTML = '';
+
+      cumulativeLegResults.slice().reverse().forEach((leg) => {
+        const tr = document.createElement('tr');
+        const isCurrent = leg.cycle === cycleCount;
+        tr.style.backgroundColor = isCurrent ? 'rgba(0, 240, 255, 0.04)' : 'transparent';
+        
+        tr.innerHTML = `
+          <td style="font-weight: 700; color: ${isCurrent ? 'var(--accent)' : 'var(--text-muted)'};">#${leg.cycle} · L${leg.legIdx}</td>
+          <td><span style="font-size: 10px; background: ${leg.pilot === 'AI' ? 'rgba(192,132,252,0.2)' : 'rgba(0,240,255,0.15)'}; color: ${leg.pilot === 'AI' ? 'var(--accent-purple)' : 'var(--accent)'}; padding: 2px 6px; border-radius: 3px; font-weight:700;">${leg.pilot}</span></td>
+          <td>[${leg.target.x.toFixed(2)}, ${leg.target.y.toFixed(2)}, ${leg.target.z.toFixed(2)}]</td>
+          <td>${leg.targetYaw}°</td>
+          <td>${leg.duration.toFixed(2)}s</td>
+          <td>[${leg.arrivalPos.x.toFixed(2)}, ${leg.arrivalPos.y.toFixed(2)}, ${leg.arrivalPos.z.toFixed(2)}]</td>
+          <td style="color: ${parseFloat(leg.posErrorCm) < 25 ? 'var(--accent-green)' : 'var(--accent-red)'}; font-weight:700;">${leg.posErrorCm} cm</td>
+          <td>${leg.avgThrust} N</td>
+          <td>${leg.maxTilt}°</td>
+          <td><span style="background: rgba(0,255,136,0.15); color: var(--accent-green); padding: 2px 6px; border-radius: 3px; font-weight: 700;">REACHED</span></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function toggleAnalysisModal() {
+      buildAnalysisTable();
+      document.getElementById('analysis-overlay').classList.toggle('show');
+    }
+
+    function exportCSV() {
+      if (missionHistory.length === 0) {
+        alert("No flight telemetry recorded yet.");
+        return;
+      }
+      let csv = "Cycle,Pilot,TotalTime(s),Leg,PosX,PosY,PosZ,TgtX,TgtY,TgtZ,PosErr(m),Speed(m/s),Roll(deg),Pitch(deg),Yaw(deg),Tilt(deg),T0,T1,T2,T3,TotalThrust(N)\n";
+      missionHistory.forEach(h => {
+        csv += `${h.cycle},${h.pilot},${h.time.toFixed(3)},${h.leg},${h.pos.x.toFixed(3)},${h.pos.y.toFixed(3)},${h.pos.z.toFixed(3)},${h.target.x.toFixed(3)},${h.target.y.toFixed(3)},${h.target.z.toFixed(3)},${h.posErr.toFixed(3)},${h.speed.toFixed(3)},${(h.euler.x*57.3).toFixed(2)},${(h.euler.y*57.3).toFixed(2)},${(h.euler.z*57.3).toFixed(2)},${h.tiltDeg.toFixed(2)},${h.thrusts[0].toFixed(2)},${h.thrusts[1].toFixed(2)},${h.thrusts[2].toFixed(2)},${h.thrusts[3].toFixed(2)},${h.totalThrust.toFixed(2)}\n`;
+      });
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `dexia_flight_clean_telemetry_${Date.now()}.csv`;
+      a.click();
+    }
+
+    // -------------------------------------------------------------
+    // Camera Control & Render Loop
+    // -------------------------------------------------------------
+    function updateCamera() {
+      const deltaPos = new THREE.Vector3().subVectors(pos, prevPos);
+
+      if (cameraMode === 'free') {
+        controls.enabled = true;
+        camera.position.add(deltaPos);
+        controls.target.copy(pos);
+        controls.update();
+      } else if (cameraMode === 'chase') {
+        controls.enabled = false;
+        const heading = euler.z;
+        const targetCamPos = new THREE.Vector3(
+          pos.x - Math.cos(heading + Math.PI / 2) * 3.5,
+          pos.y - Math.sin(heading + Math.PI / 2) * 3.5,
+          pos.z + 1.8
+        );
+        camera.position.lerp(targetCamPos, 0.1);
+        camera.lookAt(new THREE.Vector3(pos.x, pos.y, pos.z + 0.3));
+      } else if (cameraMode === 'fpv') {
+        controls.enabled = false;
+        camera.position.copy(pos).add(new THREE.Vector3(0, 0, 0.06));
+        camera.quaternion.copy(quat);
+        camera.rotateX(Math.PI / 2);
+      } else if (cameraMode === 'top') {
+        controls.enabled = false;
+        camera.position.set(pos.x, pos.y, pos.z + 8.5);
+        camera.lookAt(pos);
+      }
+
+      prevPos.copy(pos);
+    }
+
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const dt = Math.min(clock.getDelta(), 0.05);
+
+      physicsStep(dt);
+
+      // Visual Mesh Sync
+      droneGroup.position.copy(pos);
+      droneGroup.quaternion.copy(quat);
+
+      // Propeller Spin
+      const spinSpeed = isRunningCycle ? 14.0 : 4.0;
+      rotors[0].rotation.z += motorThrusts[0] * spinSpeed * dt;
+      rotors[1].rotation.z -= motorThrusts[1] * spinSpeed * dt;
+      rotors[2].rotation.z += motorThrusts[2] * spinSpeed * dt;
+      rotors[3].rotation.z -= motorThrusts[3] * spinSpeed * dt;
+
+      // Trajectory Update
+      if (isRunningCycle) {
+        if (trailCount < trailMax) {
+          trailPositions[trailCount * 3] = pos.x;
+          trailPositions[trailCount * 3 + 1] = pos.y;
+          trailPositions[trailCount * 3 + 2] = pos.z;
+          trailCount++;
+        } else {
+          for (let i = 0; i < (trailMax - 1) * 3; i++) {
+            trailPositions[i] = trailPositions[i + 3];
+          }
+          trailPositions[(trailMax - 1) * 3] = pos.x;
+          trailPositions[(trailMax - 1) * 3 + 1] = pos.y;
+          trailPositions[(trailMax - 1) * 3 + 2] = pos.z;
+        }
+        trailGeo.attributes.position.needsUpdate = true;
+      }
+
+      // Target Line
+      if (missionLegs.length && currentLegIdx < missionLegs.length) {
+        const activeTgt = missionLegs[currentLegIdx].target;
+        const posArray = targetLine.geometry.attributes.position.array;
+        posArray[0] = pos.x; posArray[1] = pos.y; posArray[2] = pos.z;
+        posArray[3] = activeTgt.x; posArray[4] = activeTgt.y; posArray[5] = activeTgt.z;
+        targetLine.geometry.attributes.position.needsUpdate = true;
+        targetLine.visible = isRunningCycle;
+      } else {
+        targetLine.visible = false;
+      }
+
+      updateCamera();
+
+      // UI HUD Updates
+      document.getElementById('val-alt').textContent = pos.z.toFixed(2) + ' m';
+      document.getElementById('val-speed').textContent = vel.length().toFixed(2) + ' m/s';
+      document.getElementById('val-pos').textContent = `${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}`;
+      document.getElementById('val-att').textContent = `${(euler.x * 57.3).toFixed(1)}° / ${(euler.y * 57.3).toFixed(1)}°`;
+      document.getElementById('val-yaw').textContent = (euler.z * 57.3).toFixed(1) + '°';
+
+      const totalT = motorThrusts.reduce((a, b) => a + b, 0);
+      document.getElementById('val-total-thrust').textContent = totalT.toFixed(2) + ' N';
+
+      for (let i = 0; i < 4; i++) {
+        const pct = (motorThrusts[i] / MAX_THRUST) * 100;
+        document.getElementById(`m${i}-fill`).style.height = pct + '%';
+        document.getElementById(`m${i}-val`).textContent = motorThrusts[i].toFixed(2) + 'N';
+      }
+
+      // Mission Progress
+      if (isRunningCycle && missionLegs.length && currentLegIdx < missionLegs.length) {
+        const activeTgt = missionLegs[currentLegIdx].target;
+        const dist = pos.distanceTo(activeTgt);
+        const totalDuration = missionLegs.length * LEG_DURATION;
+        const progressPct = Math.min((simTime / totalDuration) * 100, 100);
+
+        document.getElementById('txt-current-leg').textContent = `Cycle #${cycleCount} · Leg ${currentLegIdx + 1}/${missionLegs.length}`;
+        document.getElementById('txt-current-target').textContent = `[${activeTgt.x.toFixed(1)}, ${activeTgt.y.toFixed(1)}, ${activeTgt.z.toFixed(1)}]`;
+        document.getElementById('txt-dist-target').textContent = dist.toFixed(2) + ' m';
+        document.getElementById('cycle-progress-fill').style.width = progressPct + '%';
+      }
+
+      // If neural modal is open, live update its stats
+      const modal = document.getElementById('neural-modal-overlay');
+      if (modal && modal.classList.contains('show')) {
+        updateNeuralModalUI();
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    function setCameraMode(mode) {
+      cameraMode = mode;
+      document.querySelectorAll('.cam-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById(`cam-${mode}`).classList.add('active');
+
+      if (mode === 'free') {
+        controls.enabled = true;
+        camera.up.set(0, 0, 1);
+        controls.target.copy(pos);
+      }
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    generateNewRandomCourse();
+    animate();
+  </script>
+</body>
+</html>

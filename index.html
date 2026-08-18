@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>청주대 수강신청 서버시간</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Noto Sans KR', sans-serif;
+      background: #0a0e1a;
+      color: #e0e4ef;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* Subtle animated background */
+    body::before {
+      content: '';
+      position: fixed;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(ellipse at 30% 20%, rgba(30, 60, 120, 0.15) 0%, transparent 50%),
+                  radial-gradient(ellipse at 70% 80%, rgba(20, 50, 100, 0.1) 0%, transparent 50%);
+      animation: bgShift 20s ease-in-out infinite alternate;
+      z-index: 0;
+    }
+
+    @keyframes bgShift {
+      0% { transform: translate(0, 0); }
+      100% { transform: translate(-5%, 3%); }
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      width: 90%;
+      max-width: 560px;
+      padding: 2rem;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    .header .badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: #6b8adb;
+      background: rgba(107, 138, 219, 0.08);
+      border: 1px solid rgba(107, 138, 219, 0.15);
+      padding: 0.35rem 1rem;
+      border-radius: 4px;
+      margin-bottom: 1rem;
+    }
+
+    .header h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #f0f2f8;
+      letter-spacing: -0.02em;
+      line-height: 1.4;
+    }
+
+    .header h1 span {
+      color: #7ea3f7;
+    }
+
+    /* Server time card */
+    .time-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 16px;
+      padding: 2.5rem 2rem;
+      text-align: center;
+      position: relative;
+      backdrop-filter: blur(12px);
+      margin-bottom: 1.5rem;
+    }
+
+    .time-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 16px;
+      padding: 1px;
+      background: linear-gradient(135deg, rgba(126, 163, 247, 0.15), transparent, rgba(126, 163, 247, 0.05));
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events: none;
+    }
+
+    .time-label {
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #7ea3f7;
+      margin-bottom: 1rem;
+    }
+
+    .server-time {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 3.2rem;
+      font-weight: 700;
+      color: #f5f7ff;
+      letter-spacing: 0.04em;
+      line-height: 1;
+      margin-bottom: 0.5rem;
+      min-height: 3.2rem;
+      transition: opacity 0.15s;
+    }
+
+    .server-date {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.05rem;
+      font-weight: 400;
+      color: #8a92a8;
+      letter-spacing: 0.03em;
+      margin-bottom: 1.5rem;
+    }
+
+    .server-ms {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: #5a6380;
+    }
+
+    .server-ms .ms-value {
+      color: #7ea3f7;
+    }
+
+    /* Status indicator */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      margin-top: 1.5rem;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #3b4a6b;
+      transition: background 0.3s;
+    }
+
+    .status-dot.active {
+      background: #34d399;
+      box-shadow: 0 0 8px rgba(52, 211, 153, 0.4);
+    }
+
+    .status-dot.error {
+      background: #f87171;
+      box-shadow: 0 0 8px rgba(248, 113, 113, 0.4);
+    }
+
+    .status-dot.syncing {
+      background: #fbbf24;
+      box-shadow: 0 0 8px rgba(251, 191, 36, 0.4);
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .status-text {
+      font-size: 0.72rem;
+      font-weight: 400;
+      color: #5a6380;
+      letter-spacing: 0.04em;
+    }
+
+    /* Info panel */
+    .info-panel {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .info-item {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 10px;
+      padding: 1rem;
+    }
+
+    .info-item .label {
+      font-size: 0.65rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #5a6380;
+      margin-bottom: 0.4rem;
+    }
+
+    .info-item .value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      font-weight: 400;
+      color: #c0c8e0;
+    }
+
+    .info-item .value.positive {
+      color: #34d399;
+    }
+
+    .info-item .value.negative {
+      color: #f87171;
+    }
+
+    /* Buttons */
+    .actions {
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    .btn {
+      flex: 1;
+      font-family: 'Noto Sans KR', sans-serif;
+      font-size: 0.82rem;
+      font-weight: 500;
+      border: none;
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      letter-spacing: 0.02em;
+    }
+
+    .btn-primary {
+      background: rgba(126, 163, 247, 0.12);
+      color: #7ea3f7;
+      border: 1px solid rgba(126, 163, 247, 0.15);
+    }
+
+    .btn-primary:hover {
+      background: rgba(126, 163, 247, 0.2);
+    }
+
+    .btn-primary:active {
+      transform: scale(0.98);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.03);
+      color: #8a92a8;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: #c0c8e0;
+    }
+
+    .btn-secondary:active {
+      transform: scale(0.98);
+    }
+
+    /* Log */
+    .log-section {
+      margin-top: 1.5rem;
+    }
+
+    .log-toggle {
+      font-family: 'Noto Sans KR', sans-serif;
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      color: #5a6380;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0.4rem 0;
+      transition: color 0.2s;
+    }
+
+    .log-toggle:hover {
+      color: #8a92a8;
+    }
+
+    .log-container {
+      margin-top: 0.75rem;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 10px;
+      padding: 1rem;
+      max-height: 180px;
+      overflow-y: auto;
+      display: none;
+    }
+
+    .log-container.visible {
+      display: block;
+    }
+
+    .log-container::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .log-container::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 2px;
+    }
+
+    .log-entry {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      line-height: 1.7;
+      color: #5a6380;
+    }
+
+    .log-entry .log-time {
+      color: #3b4a6b;
+    }
+
+    .log-entry .log-ok {
+      color: #34d399;
+    }
+
+    .log-entry .log-err {
+      color: #f87171;
+    }
+
+    /* Responsive */
+    @media (max-width: 480px) {
+      .container {
+        padding: 1.5rem 1rem;
+      }
+
+      .server-time {
+        font-size: 2.4rem;
+      }
+
+      .time-card {
+        padding: 2rem 1.2rem;
+      }
+
+      .info-panel {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="badge">SERVER TIME MONITOR</div>
+      <h1>청주대학교 <span>수강신청</span> 서버시간</h1>
+    </div>
+
+    <div class="time-card">
+      <div class="time-label">서버 현재 시각</div>
+      <div class="server-time" id="serverTime">--:--:--</div>
+      <div class="server-date" id="serverDate">----.--.--</div>
+      <div class="server-ms">밀리초 <span class="ms-value" id="serverMs">---</span></div>
+
+      <div class="status-bar">
+        <div class="status-dot" id="statusDot"></div>
+        <div class="status-text" id="statusText">대기 중</div>
+      </div>
+    </div>
+
+    <div class="info-panel">
+      <div class="info-item">
+        <div class="label">내 PC와의 차이</div>
+        <div class="value" id="timeDiff">--</div>
+      </div>
+      <div class="info-item">
+        <div class="label">응답 속도</div>
+        <div class="value" id="latency">--</div>
+      </div>
+      <div class="info-item">
+        <div class="label">동기화 횟수</div>
+        <div class="value" id="syncCount">0</div>
+      </div>
+      <div class="info-item">
+        <div class="label">마지막 동기화</div>
+        <div class="value" id="lastSync">--</div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-primary" id="btnSync" onclick="manualSync()">수동 동기화</button>
+      <button class="btn btn-secondary" id="btnAutoToggle" onclick="toggleAuto()">자동 동기화 ON</button>
+    </div>
+
+    <div class="log-section">
+      <button class="log-toggle" onclick="toggleLog()">▸ 동기화 로그</button>
+      <div class="log-container" id="logContainer"></div>
+    </div>
+  </div>
+
+  <script>
+    // --- State ---
+    let serverOffset = null;       // serverTime - localTime in ms
+    let syncCountVal = 0;
+    let autoSyncInterval = null;
+    let autoSyncOn = false;
+    let tickInterval = null;
+
+    // --- DOM refs ---
+    const elTime = document.getElementById('serverTime');
+    const elDate = document.getElementById('serverDate');
+    const elMs = document.getElementById('serverMs');
+    const elDot = document.getElementById('statusDot');
+    const elStatus = document.getElementById('statusText');
+    const elDiff = document.getElementById('timeDiff');
+    const elLatency = document.getElementById('latency');
+    const elSyncCount = document.getElementById('syncCount');
+    const elLastSync = document.getElementById('lastSync');
+    const elLog = document.getElementById('logContainer');
+    const elAutoBtn = document.getElementById('btnAutoToggle');
+
+    // --- Fetch server time ---
+    const TARGET_URL = 'https://sugang.cju.ac.kr/common/login.do';
+
+    async function fetchServerTime() {
+      setStatus('syncing', '동기화 중...');
+
+      const t0 = performance.now();
+      try {
+        const res = await fetch(TARGET_URL, {
+          method: 'HEAD',
+          cache: 'no-store',
+          mode: 'cors',
+        });
+        const t1 = performance.now();
+        const rtt = t1 - t0;
+        const dateHeader = res.headers.get('Date');
+
+        if (!dateHeader) {
+          throw new Error('Date 헤더를 읽을 수 없습니다 (CORS 제한)');
+        }
+
+        const serverDate = new Date(dateHeader);
+        const localAtResponse = Date.now();
+
+        // Adjust for half RTT (server timestamp was generated halfway through)
+        const estimatedServerNow = serverDate.getTime() + (rtt / 2);
+        serverOffset = estimatedServerNow - localAtResponse;
+
+        syncCountVal++;
+        elSyncCount.textContent = syncCountVal;
+        elLatency.textContent = Math.round(rtt) + ' ms';
+
+        const now = new Date();
+        elLastSync.textContent = padTime(now.getHours()) + ':' + padTime(now.getMinutes()) + ':' + padTime(now.getSeconds());
+
+        const diffMs = serverOffset;
+        const diffAbs = Math.abs(Math.round(diffMs));
+        const diffSign = diffMs >= 0 ? '+' : '-';
+        elDiff.textContent = diffSign + formatDiffMs(diffAbs);
+        elDiff.className = 'value';
+
+        setStatus('active', '동기화 완료');
+        addLog('ok', `동기화 성공 | RTT: ${Math.round(rtt)}ms | 오프셋: ${diffSign}${diffAbs}ms`);
+
+        if (!tickInterval) startTick();
+
+      } catch (err) {
+        // Fallback: try no-cors (can't read headers, but can measure RTT)
+        try {
+          const t0b = performance.now();
+          await fetch(TARGET_URL, { method: 'HEAD', cache: 'no-store', mode: 'no-cors' });
+          const t1b = performance.now();
+          const rtt = t1b - t0b;
+
+          // Can't read Date header in no-cors, but server is reachable
+          // Use RTT-corrected local time as a rough approximation
+          if (serverOffset === null) {
+            serverOffset = 0; // No offset known yet
+          }
+
+          elLatency.textContent = Math.round(rtt) + ' ms';
+          setStatus('active', 'CORS 제한 (로컬 시간 기반)');
+          addLog('err', `CORS 제한: Date 헤더 접근 불가. RTT: ${Math.round(rtt)}ms. 로컬 시간 사용.`);
+
+          if (!tickInterval) startTick();
+
+        } catch (err2) {
+          setStatus('error', '서버 연결 실패');
+          addLog('err', `연결 실패: ${err2.message}`);
+        }
+      }
+    }
+
+    // --- Tick (update display every ~10ms) ---
+    function startTick() {
+      if (tickInterval) clearInterval(tickInterval);
+      tickInterval = setInterval(updateDisplay, 50);
+    }
+
+    function updateDisplay() {
+      if (serverOffset === null) return;
+      const now = Date.now() + serverOffset;
+      const d = new Date(now);
+
+      elTime.textContent =
+        padTime(d.getHours()) + ':' +
+        padTime(d.getMinutes()) + ':' +
+        padTime(d.getSeconds());
+
+      elDate.textContent =
+        d.getFullYear() + '.' +
+        padTime(d.getMonth() + 1) + '.' +
+        padTime(d.getDate()) + ' ' +
+        getDayName(d.getDay());
+
+      elMs.textContent = padMs(d.getMilliseconds());
+    }
+
+    // --- Helpers ---
+    function padTime(n) { return String(n).padStart(2, '0'); }
+    function padMs(n) { return String(n).padStart(3, '0'); }
+
+    function getDayName(day) {
+      return ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'][day];
+    }
+
+    function formatDiffMs(ms) {
+      if (ms < 1000) return ms + 'ms';
+      const s = (ms / 1000).toFixed(1);
+      return s + 's';
+    }
+
+    function setStatus(type, text) {
+      elDot.className = 'status-dot ' + type;
+      elStatus.textContent = text;
+    }
+
+    function addLog(type, msg) {
+      const now = new Date();
+      const ts = padTime(now.getHours()) + ':' + padTime(now.getMinutes()) + ':' + padTime(now.getSeconds());
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.innerHTML = `<span class="log-time">[${ts}]</span> <span class="log-${type === 'ok' ? 'ok' : 'err'}">${msg}</span>`;
+      elLog.prepend(entry);
+
+      // Keep max 50 entries
+      while (elLog.children.length > 50) {
+        elLog.removeChild(elLog.lastChild);
+      }
+    }
+
+    // --- Actions ---
+    function manualSync() {
+      fetchServerTime();
+    }
+
+    function toggleAuto() {
+      autoSyncOn = !autoSyncOn;
+      if (autoSyncOn) {
+        autoSyncInterval = setInterval(fetchServerTime, 5000);
+        elAutoBtn.textContent = '자동 동기화 OFF';
+        addLog('ok', '자동 동기화 시작 (5초 간격)');
+      } else {
+        clearInterval(autoSyncInterval);
+        autoSyncInterval = null;
+        elAutoBtn.textContent = '자동 동기화 ON';
+        addLog('ok', '자동 동기화 중지');
+      }
+    }
+
+    function toggleLog() {
+      const logEl = document.getElementById('logContainer');
+      logEl.classList.toggle('visible');
+      const btn = logEl.previousElementSibling;
+      btn.textContent = logEl.classList.contains('visible') ? '▾ 동기화 로그' : '▸ 동기화 로그';
+    }
+
+    // --- Init ---
+    fetchServerTime();
+  </script>
+</body>
+</html>

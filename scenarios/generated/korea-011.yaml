@@ -1,0 +1,61 @@
+scenario:
+  id: korea-011
+  theater: korea
+  mission:
+    tasking: 해안 접근로로 밀고 들어오는 적 기계화부대와 장사정포를 지연·무력화하라.
+    intent: destroy
+    roe: []
+    victory:
+      hold_line:
+      - 4008
+      - 0
+      max_blue_loss: 2
+      time_limit_s: 600
+  blue:
+  - cls: m777_howitzer
+    n: 2
+    pos:
+    - -964
+    - -89
+  - cls: switchblade
+    n: 2
+    pos:
+    - -964
+    - 81
+  - cls: m142_himars
+    n: 1
+    pos:
+    - -964
+    - -90
+  - cls: tb2_recon_uav
+    n: 1
+    pos:
+    - -964
+    - -29
+  red:
+  - cls: t72_tank
+    n: 4
+    behavior: advance
+    route:
+    - - 5433
+      - -99
+    - - 1672
+      - -99
+  - cls: bmp_apc
+    n: 2
+    behavior: advance
+    route:
+    - - 5433
+      - -145
+    - - 1672
+      - -145
+  - cls: koksan_170mm
+    n: 1
+    behavior: static_ad
+    pos:
+    - 5513
+    - -2516
+  feeds:
+  - sigint
+  - ugs
+  - uav_eo

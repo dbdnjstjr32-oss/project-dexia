@@ -1,0 +1,66 @@
+# Dexia Runtime — declarative configuration (AIP Phase 10).
+#
+# The single source of truth for a Dexia deployment. Every service
+# (dexia-sim / dexia-api / dexia-hud / dexia-evals) reads this file via
+# dexia.runtime.config.load_config(), so a scenario is launched declaratively
+# rather than by hand-tuned flags. Environment variables override any field
+# (see config.py ENV_OVERRIDES) — that's how docker-compose injects per-service
+# settings without editing this file.
+
+runtime:
+  scenario: interactive        # interactive (C2 builder) | scripted
+  hz: 10.0                      # streamer tick rate
+  airgap: false                # true => local-only LLM + offline map tiles, no egress
+
+sim:
+  enable_aa: true              # anti-air battery live
+  num_recon: 2
+  num_kami: 4
+
+llm:
+  provider: ollama             # ollama (local) | anthropic | openai
+  tactical_model: "qwen2.5:7b"            # live COA (VRAM-resident; see llm_gateway.ROUTING)
+  summary_model: "qwen2.5:7b"             # live Korean report (same resident model)
+  doctrine_model: "gpt-oss:20b"           # async AAR self-correction (RAM-offloaded)
+  host: null                   # ollama host; null => default 127.0.0.1:11434
+
+evals:
+  # Thresholds applied to EpisodeEvalSuite (Phase 9). Tuning the bar lives here,
+  # not in code — load_config().apply() pushes these into evals.metrics.THRESHOLDS.
+  thresholds:
+    kill_efficiency: 0.50      # max
+    recon_survival: 0.50       # max
+    net_survivability: 0.70    # max
+    aa_engagement: 0.50        # min (lower = we evaded)
+    broadcast_latency: 250     # min (ticks)
+    llm_accuracy: 0.90         # max
+
+redis:
+  enabled: true                # primary event bus; falls back to JSON file if down
+  host: 127.0.0.1
+  port: 6379
+
+health:
+  stall_seconds: 5.0           # telemetry age beyond this => sim considered stalled
+  restart_on_stall: true       # supervisor restarts a stalled streamer
+
+services:
+  api_port: 8000
+  hud_port: 3000
+
+auth:
+  # AIP write-funnel access control (scaled). An API key (X-Dexia-Key header)
+  # maps to a principal + clearance; the control endpoints declare a required
+  # clearance and the ActionBus enforces it, stamping WHO into the lineage trail.
+  # clearance lattice: operator < commander.
+  #
+  # SECURITY: no working credentials are shipped here. Provide keys ONE of these
+  # ways (see dexia/api/auth.py for precedence):
+  #   * environment (preferred): DEXIA_COMMANDER_KEY=...  DEXIA_OPERATOR_KEY=...
+  #   * uncomment + REPLACE the example rows below with your own random keys
+  #   * local dev only: launch with DEXIA_ALLOW_DEFAULT_KEYS=1 to accept the
+  #     built-in dexia-commander / dexia-operator keys (PUBLIC constants!)
+  # Unconfigured + no dev flag => every governed write is rejected (401).
+  principals: {}
+  #   REPLACE_WITH_RANDOM_OPERATOR_KEY:  { name: operator-1, clearance: operator }
+  #   REPLACE_WITH_RANDOM_COMMANDER_KEY: { name: commander,  clearance: commander }

@@ -1,0 +1,16 @@
+# Keep build contexts small and avoid baking host state into images.
+.venv*
+**/__pycache__
+*.pyc
+checkpoints/
+dexia-hud/node_modules
+dexia-hud/.next
+.git
+*.zip
+Dexia_Wargame_Sim_Final/
+# runtime trails are bind-mounted at run time, not copied into the image
+telemetry.json
+*_audit.jsonl
+evals_results.jsonl
+ontology_state.json
+commands.json

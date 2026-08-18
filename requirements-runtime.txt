@@ -1,0 +1,10 @@
+# Dexia runtime services (dexia-api / dexia-evals) — lightweight, no Ray/MuJoCo.
+# The control plane + evals layer are pure-stdlib + these thin deps, so they run
+# in slim containers and on the air-gapped evals node.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+redis>=5.0
+ollama>=0.2
+PyYAML>=6.0
+numpy>=1.26          # the OAG Logic blocks (RouteOptim/CommsRisk) compute on numpy

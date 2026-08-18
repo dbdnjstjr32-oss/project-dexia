@@ -1,0 +1,18 @@
+# dexia-evals — periodic live-mission EpisodeEvalSuite worker.
+# Lightweight runtime layer (no Ray/MuJoCo/Torch), driven by requirements-runtime.txt.
+FROM python:3.12-slim
+
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+# Install the FULL declared runtime deps (PyYAML + numpy + fastapi/…). The old
+# image installed only PyYAML and ignored this file, so any transitive numpy
+# import (OAG logic blocks) crash-looped the worker under restart:unless-stopped.
+COPY requirements-runtime.txt .
+RUN pip install --no-cache-dir -r requirements-runtime.txt
+
+COPY dexia/ ./dexia/
+COPY dexia.config.yaml ./
+
+# Continuously score the current mission and append to evals_results.jsonl.
+CMD ["python", "-m", "dexia.runtime.evals_worker", "--interval", "30"]
